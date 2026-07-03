@@ -1,0 +1,55 @@
+year,term,wave,interest
+2018,neobank,wave1,1.0
+2019,neobank,wave1,1.0
+2020,neobank,wave1,1.25
+2021,neobank,wave1,3.3333333333333335
+2022,neobank,wave1,5.083333333333333
+2023,neobank,wave1,4.166666666666667
+2024,neobank,wave1,4.25
+2025,neobank,wave1,6.25
+2026,neobank,wave1,7.857142857142857
+2018,digital bank app,wave1,0.0
+2019,digital bank app,wave1,0.0
+2020,digital bank app,wave1,0.5
+2021,digital bank app,wave1,0.8333333333333334
+2022,digital bank app,wave1,1.0
+2023,digital bank app,wave1,1.0
+2024,digital bank app,wave1,1.0
+2025,digital bank app,wave1,6.666666666666667
+2026,digital bank app,wave1,12.857142857142858
+2018,mobile banking,wave1,84.5
+2019,mobile banking,wave1,87.16666666666667
+2020,mobile banking,wave1,86.58333333333333
+2021,mobile banking,wave1,78.25
+2022,mobile banking,wave1,76.33333333333333
+2023,mobile banking,wave1,73.41666666666667
+2024,mobile banking,wave1,59.583333333333336
+2025,mobile banking,wave1,64.16666666666667
+2026,mobile banking,wave1,80.85714285714286
+2018,AI agent finance,wave2,0.0
+2019,AI agent finance,wave2,0.0
+2020,AI agent finance,wave2,0.0
+2021,AI agent finance,wave2,0.0
+2022,AI agent finance,wave2,0.0
+2023,AI agent finance,wave2,0.0
+2024,AI agent finance,wave2,0.08333333333333333
+2025,AI agent finance,wave2,12.25
+2026,AI agent finance,wave2,54.0
+2018,agentic AI banking,wave2,0.0
+2019,agentic AI banking,wave2,0.0
+2020,agentic AI banking,wave2,0.0
+2021,agentic AI banking,wave2,0.0
+2022,agentic AI banking,wave2,0.0
+2023,agentic AI banking,wave2,0.0
+2024,agentic AI banking,wave2,0.0
+2025,agentic AI banking,wave2,3.1666666666666665
+2026,agentic AI banking,wave2,9.714285714285714
+2018,autonomous wealth management,wave2,0.0
+2019,autonomous wealth management,wave2,0.0
+2020,autonomous wealth management,wave2,0.0
+2021,autonomous wealth management,wave2,0.0
+2022,autonomous wealth management,wave2,0.0
+2023,autonomous wealth management,wave2,0.0
+2024,autonomous wealth management,wave2,0.0
+2025,autonomous wealth management,wave2,0.4166666666666667
+2026,autonomous wealth management,wave2,2.0
