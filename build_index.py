@@ -9,9 +9,9 @@ now accelerating.
 Pipeline
 --------
 1. Load three sources produced by the collector scripts:
-     - collect_market.py -> data/market.csv   (prices for legacy vs fintech tickers)
-     - collect_trends.py -> data/trends.csv   (Google Trends per keyword)
-     - collect_edgar.py  -> data/edgar.csv    (AI-language frequency in filings)
+     - collect_market_data.py -> data/raw/prices.csv (prices for legacy vs fintech tickers)
+     - collect_trends.py -> data/raw/wave1_trends.csv, data/raw/wave2_trends.csv
+     - collect_edgar.py  -> data/raw/edgar_mentions.csv (AI-language frequency in filings)
 2. Resample everything to a common monthly frequency and z-score normalise.
 3. Build two sub-indices:
      - Wave 1 sub-index  = fintech-vs-legacy market momentum + Wave-1 search interest
@@ -49,19 +49,21 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(HERE, "data")
 OUT_DIR = os.path.join(HERE, "output")
 
-MARKET_CSV = os.path.join(DATA_DIR, "market.csv")
-TRENDS_CSV = os.path.join(DATA_DIR, "trends.csv")
-EDGAR_CSV = os.path.join(DATA_DIR, "edgar.csv")
+MARKET_CSV = os.path.join(DATA_DIR, "raw", "prices.csv")
+WAVE1_TRENDS_CSV = os.path.join(DATA_DIR, "raw", "wave1_trends.csv")
+WAVE2_TRENDS_CSV = os.path.join(DATA_DIR, "raw", "wave2_trends.csv")
+EDGAR_CSV = os.path.join(DATA_DIR, "raw", "edgar_mentions.csv")
 
-# Ticker baskets. Adjust to whatever collect_market.py actually pulled.
-LEGACY_TICKERS = ["JPM", "BAC", "C", "WFC", "GS", "MS", "HSBA.L", "BARC.L", "LLOY.L"]
-FINTECH_TICKERS = ["SQ", "PYPL", "SOFI", "AFRM", "NU", "COIN", "HOOD", "WISE.L"]
+# Ticker baskets -- must match the categories collect_market_data.py actually
+# pulled (see its TICKERS dict): traditional_bank vs. neobank + embedded_finance.
+LEGACY_TICKERS = ["JPM", "HSBC", "BCS"]
+FINTECH_TICKERS = ["SOFI", "NU", "PYPL", "XYZ"]
 
-# Search-interest keyword groups (must match column names in trends.csv).
-WAVE1_TREND_TERMS = ["neobank", "digital banking", "mobile payments",
-                     "buy now pay later", "embedded finance"]
-WAVE2_TREND_TERMS = ["ai underwriting", "ai financial advisor",
-                     "generative ai banking", "robo advisor", "ai credit scoring"]
+# Search-interest keyword groups -- must match the column names collect_trends.py
+# actually wrote to wave1_trends.csv / wave2_trends.csv.
+WAVE1_TREND_TERMS = ["neobank", "digital bank app", "mobile banking"]
+WAVE2_TREND_TERMS = ["AI agent finance", "agentic AI banking",
+                     "autonomous wealth management"]
 
 # Composite weight: FDI = W1_WEIGHT * wave1 + (1 - W1_WEIGHT) * wave2.
 # Exposed here so the Streamlit app can make it a live slider.
@@ -154,32 +156,28 @@ def load_trends(path: str, terms: list[str], name: str) -> pd.Series:
     return s
 
 
-def load_edgar(path: str) -> pd.Series:
+def load_edgar(path: str, query: str = "ai_broad") -> pd.Series:
     """AI-language intensity from filings.
 
-    Accepts either a pre-aggregated 'ai_mentions' column or per-keyword counts,
-    which are summed. Normalised per-filing if a filing count is present.
+    collect_edgar.py writes long format: one row per company/year/query
+    (ticker, name, category, year, date, query, mentions). `query` selects
+    which of the two collected series to use -- "ai_broad" ("artificial
+    intelligence") is the workhorse baseline per collect_edgar.py's own
+    docstring, since "agentic" is near-zero before ~2023 and too sparse to
+    z-score over the full history. Summed across all companies per date,
+    since one row per year-end repeats across tickers/queries.
     """
     df = pd.read_csv(path)
     date_col = _find_date_col(df)
     df[date_col] = pd.to_datetime(df[date_col])
-    lower = {c.lower(): c for c in df.columns}
 
-    if "ai_mentions" in lower:
-        val = df[lower["ai_mentions"]]
-    else:
-        ai_cols = [c for c in df.columns
-                   if any(k in c.lower() for k in
-                          ("ai", "artificial", "machine learning", "ml", "genai"))]
-        if not ai_cols:
-            raise ValueError("edgar.csv has no AI-language columns.")
-        val = df[ai_cols].apply(pd.to_numeric, errors="coerce").sum(axis=1)
+    if "query" not in df.columns or "mentions" not in df.columns:
+        raise ValueError("edgar_mentions.csv needs 'query' and 'mentions' columns.")
+    sub = df[df["query"] == query]
+    if sub.empty:
+        raise ValueError(f"No rows for query={query!r} in edgar_mentions.csv.")
 
-    out = pd.DataFrame({date_col: df[date_col], "v": val})
-    if "n_filings" in lower:
-        out["v"] = out["v"] / df[lower["n_filings"]].replace(0, np.nan)
-
-    s = out.set_index(date_col)["v"].resample(FREQ).mean()
+    s = sub.groupby(date_col)["mentions"].sum().resample(FREQ).mean()
     s.name = "edgar_ai_intensity"
     return s
 
@@ -236,19 +234,29 @@ class IndexResult:
 
 
 def build_indices(use_synthetic: bool, weight_w1: float = W1_WEIGHT) -> IndexResult:
-    have_real = all(os.path.exists(p) for p in (MARKET_CSV, TRENDS_CSV, EDGAR_CSV))
+    have_real = all(os.path.exists(p) for p in
+                     (MARKET_CSV, WAVE1_TRENDS_CSV, WAVE2_TRENDS_CSV, EDGAR_CSV))
 
     if use_synthetic or not have_real:
         market, w1_trend, w2_trend, edgar = synthetic_sources()
         used_synthetic = True
     else:
         market = load_market(MARKET_CSV)
-        w1_trend = load_trends(TRENDS_CSV, WAVE1_TREND_TERMS, "wave1_trend")
-        w2_trend = load_trends(TRENDS_CSV, WAVE2_TREND_TERMS, "wave2_trend")
+        w1_trend = load_trends(WAVE1_TRENDS_CSV, WAVE1_TREND_TERMS, "wave1_trend")
+        w2_trend = load_trends(WAVE2_TRENDS_CSV, WAVE2_TREND_TERMS, "wave2_trend")
         edgar = load_edgar(EDGAR_CSV)
         used_synthetic = False
 
     df = pd.concat([market, w1_trend, w2_trend, edgar], axis=1)
+
+    # Clip to the range every source actually covers before filling gaps.
+    # Sources have different true end dates (e.g. edgar_mentions.csv labels a
+    # still-in-progress year with a Dec-31 date, past where market/trends data
+    # actually ends) -- without this, interpolate(limit_direction="both") would
+    # flat-fill trailing months with a stale duplicate of the last real value.
+    start = max(s.first_valid_index() for s in (market, w1_trend, w2_trend, edgar))
+    end = min(s.last_valid_index() for s in (market, w1_trend, w2_trend, edgar))
+    df = df.loc[start:end]
     df = df.interpolate(limit_direction="both").dropna()
 
     # z-score every input so units are comparable

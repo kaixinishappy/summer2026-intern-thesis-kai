@@ -1,23 +1,23 @@
 {
-  "used_synthetic": true,
+  "used_synthetic": false,
   "weight_w1": 0.5,
   "series": {
     "wave1": {
       "break_dates": [
-        "2018-01-31",
-        "2020-12-31"
+        "2021-04-30",
+        "2025-06-30"
       ],
       "n_breaks": 2,
       "chow_tests": [
         {
-          "break_date": "2018-01-31",
-          "F_stat": 59.126,
-          "p_value": 0.0,
+          "break_date": "2021-04-30",
+          "F_stat": 9.094,
+          "p_value": 0.00029,
           "significant_5pct": true
         },
         {
-          "break_date": "2020-12-31",
-          "F_stat": 212.69,
+          "break_date": "2025-06-30",
+          "F_stat": 54.151,
           "p_value": 0.0,
           "significant_5pct": true
         }
@@ -25,29 +25,45 @@
     },
     "wave2": {
       "break_dates": [
-        "2023-01-31",
-        "2025-02-28"
+        "2022-02-28",
+        "2024-08-31"
       ],
       "n_breaks": 2,
       "chow_tests": [
         {
-          "break_date": "2023-01-31",
-          "F_stat": 749.667,
-          "p_value": 0.0,
+          "break_date": "2022-02-28",
+          "F_stat": 9.102,
+          "p_value": 0.00029,
           "significant_5pct": true
         },
         {
-          "break_date": "2025-02-28",
-          "F_stat": 21.67,
+          "break_date": "2024-08-31",
+          "F_stat": 36.137,
           "p_value": 0.0,
           "significant_5pct": true
         }
       ]
     },
     "FDI": {
-      "break_dates": [],
-      "n_breaks": 0,
-      "chow_tests": []
+      "break_dates": [
+        "2021-04-30",
+        "2025-06-30"
+      ],
+      "n_breaks": 2,
+      "chow_tests": [
+        {
+          "break_date": "2021-04-30",
+          "F_stat": 5.447,
+          "p_value": 0.00615,
+          "significant_5pct": true
+        },
+        {
+          "break_date": "2025-06-30",
+          "F_stat": 62.349,
+          "p_value": 0.0,
+          "significant_5pct": true
+        }
+      ]
     }
   }
 }
