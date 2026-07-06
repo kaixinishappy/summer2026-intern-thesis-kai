@@ -7,6 +7,10 @@ first (it writes output/fdi.csv and output/break_results.json).
     python build_index.py
     python make_charts.py
 
+    python build_index.py --synthetic   # demo mode, placeholder data
+    python make_charts.py --synthetic   # reads output/*_synthetic.*, writes
+                                         # charts/*_synthetic.png, watermarked
+
 Charts
 ------
 1. two_wave_index.png   -- Wave 1 / Wave 2 sub-indices + composite FDI, with
@@ -18,6 +22,7 @@ Charts
                            dual axis: 'are incumbents actually responding?'
 """
 
+import argparse
 import json
 import os
 
@@ -50,9 +55,9 @@ plt.rcParams.update({
 })
 
 
-def load():
-    df = pd.read_csv(os.path.join(OUT, "fdi.csv"), index_col=0, parse_dates=True)
-    with open(os.path.join(OUT, "break_results.json")) as f:
+def load(suffix=""):
+    df = pd.read_csv(os.path.join(OUT, f"fdi{suffix}.csv"), index_col=0, parse_dates=True)
+    with open(os.path.join(OUT, f"break_results{suffix}.json")) as f:
         breaks = json.load(f)
     return df, breaks
 
@@ -67,7 +72,14 @@ def _annotate_breaks(ax, dates, color, label_prefix):
                     color=color, va="top", ha="left")
 
 
-def chart_two_wave(df, breaks):
+def _maybe_watermark(ax, breaks):
+    if breaks.get("used_synthetic"):
+        ax.text(0.99, 0.02, "SYNTHETIC DEMO DATA -- NOT A REAL RESULT",
+                transform=ax.transAxes, ha="right", fontsize=8.5,
+                color="#B03A2E", style="italic", fontweight="bold")
+
+
+def chart_two_wave(df, breaks, suffix=""):
     fig, ax = plt.subplots(figsize=(10, 5.4))
     ax.plot(df.index, df["wave1"], color=C_W1, lw=2.2, label="Wave 1 sub-index (payments / neobanks)")
     ax.plot(df.index, df["wave2"], color=C_W2, lw=2.2, label="Wave 2 sub-index (AI-native finance)")
@@ -82,14 +94,15 @@ def chart_two_wave(df, breaks):
     ax.legend(loc="upper left", frameon=False, fontsize=9)
     ax.xaxis.set_major_locator(mdates.YearLocator())
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    _maybe_watermark(ax, breaks)
     fig.tight_layout()
-    p = os.path.join(CHART_DIR, "two_wave_index.png")
+    p = os.path.join(CHART_DIR, f"two_wave_index{suffix}.png")
     fig.savefig(p, bbox_inches="tight")
     plt.close(fig)
     return p
 
 
-def chart_momentum(df, breaks, window=12):
+def chart_momentum(df, breaks, window=12, suffix=""):
     m1 = df["wave1"].diff(window)
     m2 = df["wave2"].diff(window)
     fig, ax = plt.subplots(figsize=(10, 5.4))
@@ -103,14 +116,15 @@ def chart_momentum(df, breaks, window=12):
     ax.legend(loc="upper left", frameon=False, fontsize=9)
     ax.xaxis.set_major_locator(mdates.YearLocator())
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    _maybe_watermark(ax, breaks)
     fig.tight_layout()
-    p = os.path.join(CHART_DIR, "momentum_handoff.png")
+    p = os.path.join(CHART_DIR, f"momentum_handoff{suffix}.png")
     fig.savefig(p, bbox_inches="tight")
     plt.close(fig)
     return p
 
 
-def chart_incumbent(df, breaks):
+def chart_incumbent(df, breaks, suffix=""):
     fig, ax1 = plt.subplots(figsize=(10, 5.4))
     ax1.plot(df.index, df["market_rel_strength"], color=C_MKT, lw=2.2)
     ax1.set_ylabel("Fintech / legacy relative strength", color=C_MKT)
@@ -126,18 +140,26 @@ def chart_incumbent(df, breaks):
                   fontweight="bold", loc="left")
     ax1.xaxis.set_major_locator(mdates.YearLocator())
     ax1.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    _maybe_watermark(ax1, breaks)
     fig.tight_layout()
-    p = os.path.join(CHART_DIR, "incumbent_response.png")
+    p = os.path.join(CHART_DIR, f"incumbent_response{suffix}.png")
     fig.savefig(p, bbox_inches="tight")
     plt.close(fig)
     return p
 
 
 def main():
-    df, breaks = load()
-    paths = [chart_two_wave(df, breaks),
-             chart_momentum(df, breaks),
-             chart_incumbent(df, breaks)]
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--synthetic", action="store_true",
+                    help="read output/*_synthetic.* instead of the real fdi.csv / "
+                         "break_results.json, and write watermarked charts/*_synthetic.png")
+    args = ap.parse_args()
+
+    suffix = "_synthetic" if args.synthetic else ""
+    df, breaks = load(suffix)
+    paths = [chart_two_wave(df, breaks, suffix),
+             chart_momentum(df, breaks, suffix=suffix),
+             chart_incumbent(df, breaks, suffix)]
     for p in paths:
         print("saved", p)
 

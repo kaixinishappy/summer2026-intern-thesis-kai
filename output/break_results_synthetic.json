@@ -1,0 +1,53 @@
+{
+  "used_synthetic": true,
+  "weight_w1": 0.5,
+  "series": {
+    "wave1": {
+      "break_dates": [
+        "2018-01-31",
+        "2020-12-31"
+      ],
+      "n_breaks": 2,
+      "chow_tests": [
+        {
+          "break_date": "2018-01-31",
+          "F_stat": 59.126,
+          "p_value": 0.0,
+          "significant_5pct": true
+        },
+        {
+          "break_date": "2020-12-31",
+          "F_stat": 212.69,
+          "p_value": 0.0,
+          "significant_5pct": true
+        }
+      ]
+    },
+    "wave2": {
+      "break_dates": [
+        "2023-01-31",
+        "2025-02-28"
+      ],
+      "n_breaks": 2,
+      "chow_tests": [
+        {
+          "break_date": "2023-01-31",
+          "F_stat": 749.667,
+          "p_value": 0.0,
+          "significant_5pct": true
+        },
+        {
+          "break_date": "2025-02-28",
+          "F_stat": 21.67,
+          "p_value": 0.0,
+          "significant_5pct": true
+        }
+      ]
+    },
+    "FDI": {
+      "break_dates": [],
+      "n_breaks": 0,
+      "chow_tests": []
+    }
+  }
+}

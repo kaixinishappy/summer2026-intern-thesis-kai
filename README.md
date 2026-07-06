@@ -11,16 +11,31 @@ underwriting and advisory).
 
 ## The finding in one sentence
 
-Wave 1 momentum plateaus around 2020–2021 while Wave 2 momentum accelerates from
-~2023 — a detectable *handoff* rather than one continuous trend — and a blended
-"fintech index" misses it entirely because averaging the two waves cancels the
-signal.
+Wave 1 peaks in 2020 and rolls over by April 2021, then grinds lower for three
+straight years before an abrupt (and still-thin) rebound from mid-2025, while
+Wave 2 stays flat-to-negative until a genuine acceleration begins in August
+2024 and roughly triples in strength by mid-2026 — two separately-dated,
+statistically significant breaks (Chow p < 0.001) rather than one continuous
+trend.
+
+> **Nuance:** the blended composite FDI does *not* cancel this signal the way
+> the original hypothesis expected. Because Wave 1 and Wave 2 happen to both
+> inflect upward within the same few months of 2025, the FDI's detected break
+> dates are identical to Wave 1's alone — so right now the composite is
+> dominated by Wave 1's swings rather than cleanly averaging away two distinct
+> stories. Also note the final one to two months of data (Jun-Jul 2026) reverse
+> sharply in *both* sub-indices; treat that tail as noisy/unconfirmed, not a
+> new trend — see `charts/two_wave_index.png` and `output/fdi.csv`.
 
 > **Status:** `build_index.py` requires all three collectors' real output to
 > be present and fails loudly (`FileNotFoundError`) if any is missing — there
-> is no synthetic-data fallback. (An earlier version silently substituted
-> fabricated placeholder data when its loader paths were wrong; that fallback
-> has been removed entirely now that the paths are fixed.)
+> is no *automatic* synthetic-data fallback. (An earlier version silently
+> substituted fabricated placeholder data whenever a real CSV was missing,
+> because its loader paths were wrong; that auto-fallback is gone now that the
+> paths are fixed.) A synthetic **demo mode** still exists, but only runs when
+> explicitly requested with `--synthetic`, and it always writes to separate
+> `*_synthetic.*` files/charts so it can never be confused with, or overwrite,
+> a real result — see **Synthetic demo mode** below.
 
 ## How it works
 
@@ -91,8 +106,9 @@ project. Writes:
 - `charts/edgar_mentions.png`
 
 **`build_index.py`** — the combination step. Loads the three collectors'
-real output (raises `FileNotFoundError` if any is missing — no synthetic
-fallback), resamples everything to monthly and z-scores it, then:
+real output (raises `FileNotFoundError` if any is missing — no automatic
+synthetic fallback; pass `--synthetic` to opt into placeholder demo data
+instead, see below), resamples everything to monthly and z-scores it, then:
 - **Wave 1 sub-index** = z(market relative strength) + z(Wave-1 search interest)
 - **Wave 2 sub-index** = z(Wave-2 search interest) + z(EDGAR "ai_broad" intensity)
 - **Composite FDI** = `W1_WEIGHT * wave1 + (1 - W1_WEIGHT) * wave2` (default 50/50)
@@ -123,11 +139,36 @@ python build_index.py
 python make_charts.py
 ```
 
+## Synthetic demo mode
+
+Both `collect_trends.py` and `collect_edgar.py` need live internet access
+(trends.google.com / efts.sec.gov), which a sandboxed environment may block.
+For demoing the *method* without that access, `build_index.py` and
+`make_charts.py` both accept `--synthetic`:
+
+```bash
+python build_index.py --synthetic    # writes output/fdi_synthetic.csv,
+                                      # output/break_results_synthetic.json
+python make_charts.py --synthetic    # reads those, writes charts/*_synthetic.png
+```
+
+This is opt-in only — it never triggers automatically, and it never touches
+`output/fdi.csv` / `output/break_results.json` / the non-suffixed chart PNGs,
+so it can't be confused with, or silently overwrite, a real result. Every
+synthetic chart is watermarked "SYNTHETIC DEMO DATA -- NOT A REAL RESULT" and
+the console output prints the same warning. **The synthetic result is a
+demonstration that the pipeline and break-detection method work end to end —
+it is not evidence for or against the two-wave thesis**, since its shape
+(Wave 1 rising then plateauing, Wave 2 flat then accelerating) is baked in by
+construction in `synthetic_sources()`.
+
 ## Outputs
 
 - `output/fdi.csv` — monthly sub-indices and composite FDI
 - `output/break_results.json` — detected break dates + Chow F/p per series
 - six chart PNGs in `charts/` — see below
+- (if `--synthetic` was used) matching `output/*_synthetic.*` and
+  `charts/*_synthetic.png` files, entirely separate from the real ones above
 
 ## Charts, explained
 
