@@ -141,22 +141,31 @@ def build_indexed_performance(prices: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def plot_indexed_performance(indexed_df: pd.DataFrame, out_path: str):
-    category_colors = {
-        "traditional_bank": "#4A5568",   # slate grey
-        "neobank": "#38B2AC",            # teal
-        "embedded_finance": "#DD6B20",   # orange
-    }
+    # One hue per company (not per category) -- 7 tickers need 7 distinct
+    # identities, so 3 category colors shared across them made same-category
+    # companies indistinguishable. Colors are the validated CVD-safe
+    # categorical palette (see dataviz skill), assigned in the fixed order
+    # below so no two companies share a hue; linestyle still groups by
+    # category as a secondary cue.
+    palette = ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7", "#e34948", "#e87ba4"]
+    ticker_order = [sym for tickers in TICKERS.values() for sym in tickers]
+    ticker_colors = dict(zip(ticker_order, palette))
+    category_linestyle = {"traditional_bank": "-", "neobank": "--", "embedded_finance": ":"}
 
     fig, ax = plt.subplots(figsize=(12, 7))
 
-    for ticker, group in indexed_df.groupby("ticker"):
+    for ticker in ticker_order:
+        group = indexed_df[indexed_df["ticker"] == ticker]
+        if group.empty:
+            continue
         category = group["category"].iloc[0]
         name = group["name"].iloc[0]
         ax.plot(
             group["Date"], group["indexed"],
             label=f"{name} ({ticker})",
-            color=category_colors.get(category, "black"),
-            alpha=0.85,
+            color=ticker_colors[ticker],
+            linestyle=category_linestyle.get(category, "-"),
+            alpha=0.9,
             linewidth=1.6,
         )
 
