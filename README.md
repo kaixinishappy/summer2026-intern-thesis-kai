@@ -16,13 +16,11 @@ Wave 1 momentum plateaus around 2020–2021 while Wave 2 momentum accelerates fr
 "fintech index" misses it entirely because averaging the two waves cancels the
 signal.
 
-> **Status:** `build_index.py` now loads real collector output (it prints
-> `Data source: REAL`). It previously fell back to synthetic data silently
-> because its loaders pointed at `data/market.csv` / `data/trends.csv` /
-> `data/edgar.csv`, which never existed — fixed to read the actual paths in
-> `data/raw/`. The ticker baskets, trend-term lists, and the EDGAR loader
-> (which expects a different, long-format schema) were also out of sync with
-> the collectors and have been corrected.
+> **Status:** `build_index.py` requires all three collectors' real output to
+> be present and fails loudly (`FileNotFoundError`) if any is missing — there
+> is no synthetic-data fallback. (An earlier version silently substituted
+> fabricated placeholder data when its loader paths were wrong; that fallback
+> has been removed entirely now that the paths are fixed.)
 
 ## How it works
 
@@ -93,9 +91,8 @@ project. Writes:
 - `charts/edgar_mentions.png`
 
 **`build_index.py`** — the combination step. Loads the three collectors'
-real output (falls back to synthetic placeholder data with the two-wave shape
-baked in only if any real file is missing, or `--synthetic` is passed),
-resamples everything to monthly and z-scores it, then:
+real output (raises `FileNotFoundError` if any is missing — no synthetic
+fallback), resamples everything to monthly and z-scores it, then:
 - **Wave 1 sub-index** = z(market relative strength) + z(Wave-1 search interest)
 - **Wave 2 sub-index** = z(Wave-2 search interest) + z(EDGAR "ai_broad" intensity)
 - **Composite FDI** = `W1_WEIGHT * wave1 + (1 - W1_WEIGHT) * wave2` (default 50/50)
@@ -119,17 +116,12 @@ python collect_trends.py
 python collect_edgar.py
 
 # 2. build indices + run structural break tests -> output/fdi.csv, break_results.json
-#    prints "Data source: REAL" once all three collectors' CSVs exist
+#    (requires all three collectors above to have run first)
 python build_index.py
 
 # 3. generate the three headline charts -> charts/*.png
 python make_charts.py
 ```
-
-No data yet? `python build_index.py --synthetic` runs the full pipeline on
-placeholder data with the two-wave shape baked in, so you can see the method work
-end to end. **Synthetic output is a demonstration of the method, not evidence** —
-every chart and the console output are tagged as synthetic.
 
 ## Outputs
 

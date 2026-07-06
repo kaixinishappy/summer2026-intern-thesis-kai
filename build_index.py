@@ -21,12 +21,10 @@ Pipeline
    sub-index, plus a classical Chow test at the detected break for significance.
 6. Save output/fdi.csv and output/break_results.json.
 
-If the real CSVs are absent, the script generates SYNTHETIC data with the thesis
-shape baked in so the whole pipeline runs and can be demoed. Replace the loaders'
-column names with your collectors' actual columns and delete the synthetic path.
+Requires the three collector scripts to have already been run -- fails loudly
+(FileNotFoundError) if any of their output CSVs is missing.
 
-Run:  python build_index.py            (uses real data if present, else synthetic)
-      python build_index.py --synthetic  (force synthetic)
+Run:  python build_index.py
 """
 
 from __future__ import annotations
@@ -183,42 +181,6 @@ def load_edgar(path: str, query: str = "ai_broad") -> pd.Series:
 
 
 # --------------------------------------------------------------------------- #
-# SYNTHETIC FALLBACK  --  delete once real collectors are wired in
-# --------------------------------------------------------------------------- #
-
-def synthetic_sources(seed: int = 7):
-    """Generate the three sources with the two-wave shape baked in.
-
-    Wave 1 signals rise 2015-2021 then plateau/decline. Wave 2 signals stay flat
-    then accelerate from ~2023. This exists so the pipeline runs end-to-end; the
-    'finding' it produces is by construction, NOT evidence. Real data replaces it.
-    """
-    rng = np.random.default_rng(seed)
-    idx = pd.date_range("2015-01-31", "2025-12-31", freq=FREQ)
-    n = len(idx)
-    t = np.arange(n)
-
-    def logistic(t, mid, rate, top=1.0):
-        return top / (1 + np.exp(-rate * (t - mid)))
-
-    # Wave 1: logistic rise saturating ~2021 (month ~72), then mild decline
-    w1_shape = logistic(t, mid=48, rate=0.12) - 0.15 * logistic(t, mid=84, rate=0.08)
-    # Wave 2: flat until ~2023 (month ~96) then sharp logistic acceleration
-    w2_shape = logistic(t, mid=104, rate=0.22)
-
-    # market relative strength ~ tracks wave1 with noise
-    market = pd.Series(1.0 + 1.4 * w1_shape + rng.normal(0, 0.05, n),
-                       index=idx, name="market_rel_strength")
-    wave1_trend = pd.Series(35 + 55 * w1_shape + rng.normal(0, 3, n),
-                            index=idx, name="wave1_trend")
-    wave2_trend = pd.Series(20 + 70 * w2_shape + rng.normal(0, 3, n),
-                            index=idx, name="wave2_trend")
-    edgar = pd.Series(0.5 + 6.0 * w2_shape + 0.6 * w1_shape + rng.normal(0, 0.15, n),
-                      index=idx, name="edgar_ai_intensity")
-    return market, wave1_trend, wave2_trend, edgar
-
-
-# --------------------------------------------------------------------------- #
 # INDEX CONSTRUCTION
 # --------------------------------------------------------------------------- #
 
@@ -229,23 +191,14 @@ def zscore(s: pd.Series) -> pd.Series:
 @dataclass
 class IndexResult:
     df: pd.DataFrame
-    used_synthetic: bool
     weight_w1: float = W1_WEIGHT
 
 
-def build_indices(use_synthetic: bool, weight_w1: float = W1_WEIGHT) -> IndexResult:
-    have_real = all(os.path.exists(p) for p in
-                     (MARKET_CSV, WAVE1_TRENDS_CSV, WAVE2_TRENDS_CSV, EDGAR_CSV))
-
-    if use_synthetic or not have_real:
-        market, w1_trend, w2_trend, edgar = synthetic_sources()
-        used_synthetic = True
-    else:
-        market = load_market(MARKET_CSV)
-        w1_trend = load_trends(WAVE1_TRENDS_CSV, WAVE1_TREND_TERMS, "wave1_trend")
-        w2_trend = load_trends(WAVE2_TRENDS_CSV, WAVE2_TREND_TERMS, "wave2_trend")
-        edgar = load_edgar(EDGAR_CSV)
-        used_synthetic = False
+def build_indices(weight_w1: float = W1_WEIGHT) -> IndexResult:
+    market = load_market(MARKET_CSV)
+    w1_trend = load_trends(WAVE1_TRENDS_CSV, WAVE1_TREND_TERMS, "wave1_trend")
+    w2_trend = load_trends(WAVE2_TRENDS_CSV, WAVE2_TREND_TERMS, "wave2_trend")
+    edgar = load_edgar(EDGAR_CSV)
 
     df = pd.concat([market, w1_trend, w2_trend, edgar], axis=1)
 
@@ -270,7 +223,7 @@ def build_indices(use_synthetic: bool, weight_w1: float = W1_WEIGHT) -> IndexRes
     z["FDI"] = weight_w1 * z["wave1"] + (1 - weight_w1) * z["wave2"]
 
     out = pd.concat([df, z[["wave1", "wave2", "FDI"]]], axis=1)
-    return IndexResult(df=out, used_synthetic=used_synthetic, weight_w1=weight_w1)
+    return IndexResult(df=out, weight_w1=weight_w1)
 
 
 # --------------------------------------------------------------------------- #
@@ -331,8 +284,7 @@ def chow_test(series: pd.Series, break_date: str) -> dict:
 
 def run_break_analysis(res: IndexResult) -> dict:
     df = res.df
-    out = {"used_synthetic": res.used_synthetic, "weight_w1": res.weight_w1,
-           "series": {}}
+    out = {"weight_w1": res.weight_w1, "series": {}}
     for col in ("wave1", "wave2", "FDI"):
         det = detect_breaks(df[col])
         chow = [chow_test(df[col], bd) for bd in det["break_dates"]]
@@ -348,14 +300,12 @@ def run_break_analysis(res: IndexResult) -> dict:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--synthetic", action="store_true",
-                    help="force synthetic data even if real CSVs exist")
     ap.add_argument("--w1", type=float, default=W1_WEIGHT,
                     help="Wave 1 weight in composite (0..1)")
     args = ap.parse_args()
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    res = build_indices(use_synthetic=args.synthetic, weight_w1=args.w1)
+    res = build_indices(weight_w1=args.w1)
 
     fdi_path = os.path.join(OUT_DIR, "fdi.csv")
     res.df.to_csv(fdi_path)
@@ -367,7 +317,6 @@ def main():
                   {"series": breaks["series"]}, f, indent=2)
 
     print("=" * 66)
-    print(f"  Data source : {'SYNTHETIC (placeholder)' if res.used_synthetic else 'REAL'}")
     print(f"  Rows        : {len(res.df)}  ({res.df.index.min().date()} -> {res.df.index.max().date()})")
     print(f"  W1 weight   : {res.weight_w1}")
     print("-" * 66)

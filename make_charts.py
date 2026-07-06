@@ -4,7 +4,7 @@ make_charts.py
 Produces the three charts that carry the written verdict. Run build_index.py
 first (it writes output/fdi.csv and output/break_results.json).
 
-    python build_index.py --synthetic
+    python build_index.py
     python make_charts.py
 
 Charts
@@ -82,10 +82,6 @@ def chart_two_wave(df, breaks):
     ax.legend(loc="upper left", frameon=False, fontsize=9)
     ax.xaxis.set_major_locator(mdates.YearLocator())
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
-    tag = "SYNTHETIC DATA" if breaks["used_synthetic"] else ""
-    if tag:
-        ax.text(0.99, 0.02, tag, transform=ax.transAxes, ha="right",
-                fontsize=8, color="grey", style="italic")
     fig.tight_layout()
     p = os.path.join(CHART_DIR, "two_wave_index.png")
     fig.savefig(p, bbox_inches="tight")
