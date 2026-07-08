@@ -109,10 +109,11 @@ def build_ticker_to_cik_map() -> dict:
 # 3. Count matching filings per company per year per query
 # ---------------------------------------------------------------------------
 
-def count_mentions(cik: str, forms: str, query: str, year: int,
+def count_mentions(cik: str | None, forms: str, query: str, year: int,
                    max_retries: int = 4, timeout: int = 30) -> float:
     """Number of filings (not raw text occurrences) matching `query`, for one
-    company, one form type, one calendar year.
+    company (or, if cik is None, across ALL SEC filers), one form type, one
+    calendar year.
 
     `query` is passed to EDGAR verbatim, so it may contain quoted phrases and
     boolean OR/AND/NOT operators. Retries on rate-limits (429), transient
@@ -128,15 +129,17 @@ def count_mentions(cik: str, forms: str, query: str, year: int,
         # presence of this param.
         "startdt": f"{year}-01-01",
         "enddt": f"{year}-12-31",
-        "ciks": cik,
     }
+    if cik:
+        params["ciks"] = cik
+    label = cik or "ALL FILERS"
     for attempt in range(max_retries):
         try:
             resp = requests.get(SEARCH_URL, params=params,
                                 headers=HEADERS, timeout=timeout)
         except requests.exceptions.RequestException as e:
             wait = 3 * (2 ** attempt)
-            print(f"    Network error ({e.__class__.__name__}) for {cik} {year}, "
+            print(f"    Network error ({e.__class__.__name__}) for {label} {year}, "
                   f"retry in {wait}s...")
             time.sleep(wait)
             continue
@@ -144,7 +147,7 @@ def count_mentions(cik: str, forms: str, query: str, year: int,
         if resp.status_code in RETRYABLE_STATUS:
             base = 15 if resp.status_code == 429 else 3  # back off harder on real rate limits
             wait = base * (2 ** attempt)
-            print(f"    HTTP {resp.status_code} for {cik} {year}, retry in {wait}s "
+            print(f"    HTTP {resp.status_code} for {label} {year}, retry in {wait}s "
                   f"(attempt {attempt + 1}/{max_retries})...")
             time.sleep(wait)
             continue
@@ -153,7 +156,7 @@ def count_mentions(cik: str, forms: str, query: str, year: int,
         data = resp.json()
         return data.get("hits", {}).get("total", {}).get("value", 0)
 
-    print(f"    GAVE UP on {cik} {year} after {max_retries} retries -> recording NaN")
+    print(f"    GAVE UP on {label} {year} after {max_retries} retries -> recording NaN")
     return np.nan
 
 
