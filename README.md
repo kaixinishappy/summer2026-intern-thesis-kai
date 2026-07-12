@@ -9,34 +9,6 @@ this project tests for **two separate structural breaks**: the maturation of
 Wave 1 (payments, neobanks, embedded finance) and the onset of Wave 2 (AI-native
 underwriting and advisory).
 
-## The finding in one sentence
-
-Wave 1 peaks in 2020 and rolls over by April 2021, then grinds lower for three
-straight years before an abrupt (and still-thin) rebound from mid-2025, while
-Wave 2 stays flat-to-negative until a genuine acceleration begins in August
-2024 and roughly triples in strength by mid-2026 — two separately-dated,
-statistically significant breaks (Chow p < 0.001) rather than one continuous
-trend.
-
-> **Nuance:** the blended composite FDI does *not* cancel this signal the way
-> the original hypothesis expected. Because Wave 1 and Wave 2 happen to both
-> inflect upward within the same few months of 2025, the FDI's detected break
-> dates are identical to Wave 1's alone — so right now the composite is
-> dominated by Wave 1's swings rather than cleanly averaging away two distinct
-> stories. Also note the final one to two months of data (Jun-Jul 2026) reverse
-> sharply in *both* sub-indices; treat that tail as noisy/unconfirmed, not a
-> new trend — see `charts/two_wave_index.png` and `output/fdi.csv`.
-
-> **Status:** `build_index.py` requires all three collectors' real output to
-> be present and fails loudly (`FileNotFoundError`) if any is missing — there
-> is no *automatic* synthetic-data fallback. (An earlier version silently
-> substituted fabricated placeholder data whenever a real CSV was missing,
-> because its loader paths were wrong; that auto-fallback is gone now that the
-> paths are fixed.) A synthetic **demo mode** still exists, but only runs when
-> explicitly requested with `--synthetic`, and it always writes to separate
-> `*_synthetic.*` files/charts so it can never be confused with, or overwrite,
-> a real result — see **Synthetic demo mode** below.
-
 ## How it works
 
 Three independent data sources are collected, normalised to a monthly frequency,
@@ -114,6 +86,10 @@ artifact of which 5 companies got picked. Writes:
 - `data/raw/edgar_marketwide.csv` — year, query, total_filings (market-wide)
 - `charts/edgar_marketwide.png` — 5-company sample vs. market-wide, `agentic` query
 
+Also accepts `--synthetic` (see **Synthetic demo mode** below) — the only
+collector script that does, since it's the one piece of evidence with no
+other offline fallback.
+
 **`build_index.py`** — the combination step. Loads the three collectors'
 real output (raises `FileNotFoundError` if any is missing — no automatic
 synthetic fallback; pass `--synthetic` to opt into placeholder demo data
@@ -150,26 +126,41 @@ python make_charts.py
 
 ## Synthetic demo mode
 
-Both `collect_trends.py` and `collect_edgar.py` need live internet access
-(trends.google.com / efts.sec.gov), which a sandboxed environment may block.
-For demoing the *method* without that access, `build_index.py` and
-`make_charts.py` both accept `--synthetic`:
+`collect_trends.py`, `collect_edgar.py`, and `collect_edgar_marketwide.py`
+all need live internet access (trends.google.com / efts.sec.gov), which a
+sandboxed environment may block. For demoing the *method* without that
+access, `build_index.py`, `make_charts.py`, and `collect_edgar_marketwide.py`
+all accept `--synthetic`:
 
 ```bash
-python build_index.py --synthetic    # writes output/fdi_synthetic.csv,
-                                      # output/break_results_synthetic.json
-python make_charts.py --synthetic    # reads those, writes charts/*_synthetic.png
+python build_index.py --synthetic               # writes output/fdi_synthetic.csv,
+                                                  # output/break_results_synthetic.json
+python make_charts.py --synthetic                # reads those, writes charts/*_synthetic.png
+python collect_edgar_marketwide.py --synthetic   # writes data/raw/edgar_marketwide_synthetic.csv,
+                                                  # charts/edgar_marketwide_synthetic.png
 ```
 
+`collect_market_data.py` and `collect_trends.py` don't need their own
+`--synthetic` flag — `build_index.py --synthetic` fabricates stand-in data
+for all three collectors' outputs directly, bypassing them entirely.
+`collect_edgar_marketwide.py` is the exception: its output
+(`edgar_marketwide.csv`/`.png`) is a standalone check that never flows
+through `build_index.py`, so it needed its own synthetic path to have any
+offline fallback at all — without it, "the single strongest piece of
+evidence in the whole project" (per `VERDICT.md`) would have no way to be
+demoed without live SEC access.
+
 This is opt-in only — it never triggers automatically, and it never touches
-`output/fdi.csv` / `output/break_results.json` / the non-suffixed chart PNGs,
-so it can't be confused with, or silently overwrite, a real result. Every
-synthetic chart is watermarked "SYNTHETIC DEMO DATA -- NOT A REAL RESULT" and
-the console output prints the same warning. **The synthetic result is a
-demonstration that the pipeline and break-detection method work end to end —
-it is not evidence for or against the two-wave thesis**, since its shape
-(Wave 1 rising then plateauing, Wave 2 flat then accelerating) is baked in by
-construction in `synthetic_sources()`.
+`output/fdi.csv` / `output/break_results.json` / `data/raw/edgar_marketwide.csv`
+/ the non-suffixed chart PNGs, so it can't be confused with, or silently
+overwrite, a real result. Every synthetic chart is watermarked "SYNTHETIC
+DEMO DATA -- NOT A REAL RESULT" and the console output prints the same
+warning. **The synthetic result is a demonstration that the pipeline and
+break-detection method work end to end — it is not evidence for or against
+the two-wave thesis**, since its shape (Wave 1 rising then plateauing, Wave 2
+flat then accelerating; market-wide/sample `agentic` counts near-zero then
+spiking) is baked in by construction in `synthetic_sources()` and
+`synthetic_marketwide_and_sample()`.
 
 ## Outputs
 
@@ -179,78 +170,32 @@ construction in `synthetic_sources()`.
 - (if `--synthetic` was used) matching `output/*_synthetic.*` and
   `charts/*_synthetic.png` files, entirely separate from the real ones above
 
-## Charts, explained
+## Limitations — read before over-citing this
 
-Three per-collector diagnostic charts (one per data source, sanity-checks the
-raw signal), plus three headline charts (built from the combined index).
-Descriptions below reflect the current real-data run, not a hypothetical.
-
-**`charts/indexed_performance.png`** (from `collect_market_data.py`) — every
-ticker's price rebased to 100 at its 2018 start date, one line per company,
-colored by category. Currently shows fintech/embedded-finance names (XYZ,
-PYPL) spiking to 6-7x their starting price through 2021 while the traditional
-banks barely move, then fintech giving almost all of that back by 2022-2023
-while JPM/HSBC/BCS grind steadily upward and end up *ahead* of PYPL and XYZ by
-2026 — the raw price evidence behind the "Wave 1 plateaued" claim.
-
-**`charts/trends_comparison.png`** (from `collect_trends.py`) — average
-yearly Google Trends interest for the Wave 1 term group vs. the Wave 2 term
-group. Wave 1 interest is flat-to-declining 2018-2024 then ticks back up;
-Wave 2 interest is literally zero every year through 2023 (nobody was
-searching "agentic AI banking" before then) and only turns on in 2024-2025,
-reaching ~22 (still well below Wave 1's ~34) by 2026 — the "Wave 2 is only
-just beginning" claim, visible directly in search behavior.
-
-**`charts/edgar_marketwide.png`** (from `collect_edgar_marketwide.py`) — two
-stacked panels sharing an x-axis: market-wide `agentic` filing counts across
-every SEC 10-K filer (top) against the 5-company sample's `agentic` counts
-(bottom), since the two are on wildly different scales. Both panels show the
-same shape independently: near-zero for years, then a sharp jump in the most
-recent cycle (5-company sample: 0 every year 2019-2025, then 4 filings in
-2026 — one each from JPM, HSBC, PayPal, and Block; market-wide: low single
-digits through 2024, then ~111 in 2025 and ~383 in 2026). This is the
-project's answer to "is the thinness real, or just an artifact of which 5
-companies got picked" — see `VERDICT.md` Part 2.
-
-**`charts/two_wave_index.png`** — the two z-scored sub-indices plus the
-composite FDI, with detected break dates annotated as vertical lines. In the
-current run: Wave 1 peaks around late 2020/2021, declines through 2023-2024,
-then partially recovers into 2026; Wave 2 stays near/below zero until
-2022 and then rises steadily, overtaking Wave 1 by mid-2025 and pulling well
-ahead by 2026. Breaks land at Apr 2021 and Jun 2025 for Wave 1, Feb 2022 and
-Aug 2024 for Wave 2 — all significant at the 5% level (Chow p < 0.001).
-
-**`charts/momentum_handoff.png`** — the 12-month change (momentum) in each
-sub-index, the same data the break detection actually runs on. Wave 1
-momentum is negative for most of 2021-2025 (red-shaded region — literally
-losing ground year over year). Wave 2 momentum actually *declines* over
-2021-2023 (going negative itself around early 2023) before turning and
-accelerating from 2024 onward — so the "handoff" is a crossover around
-2023-2024, not two lines moving in opposite directions the whole time. Both
-spike together at the very end of the series (2026), which is the composite
-FDI's most recent and least-confirmed move — worth treating as provisional
-rather than a settled trend given how few
-months of data support it.
-
-**`charts/incumbent_response.png`** — market relative strength (red, left
-axis) against EDGAR AI-language intensity (blue, right axis) on a dual-axis
-plot. Note the EDGAR line moves in straight interpolated segments between
-year-end points, since it's genuinely annual data resampled to monthly, not a
-monthly-native series. Shows fintech market pressure peaking in 2021 while AI
-disclosure language actually dips in 2023-2024 before climbing again toward
-2025-2026 — i.e. incumbents' AI-language ramp doesn't line up neatly with when
-market pressure from fintech was highest, it shows up later.
-
-## Method notes & limitations
-
-- Breaks are detected on *momentum* (12-month difference) so a plateau registers
-  as a clean mean shift, which is both statistically tractable and easy to
-  interpret ("growth stopped here").
-- Search interest measures *attention*, not adoption; filing language measures
-  what incumbents *say*, not what they ship. Both are treated as leading
-  indicators, not ground truth.
-- The Wave 2 window is short (~3 years), so the onset signal cannot yet be
-  distinguished from a spike. See `VERDICT.md` for the full treatment.
+- **Proxies, not ground truth.** Search interest measures attention, not
+  adoption. Filing language measures what companies *say*, not what they
+  ship or how much revenue it drives. Stock price reflects expectations, not
+  realized market share. Net income is a real financial outcome, but only
+  four fiscal years are available per company via `yfinance`, too short to
+  fully separate a rate-cycle effect from company-specific factors.
+- **Short Wave 2 window.** The genuine acceleration signal covers roughly
+  2024-2026 — about two years. A single flat year would meaningfully change
+  the picture; this cannot yet be distinguished from a temporary spike with
+  full confidence.
+- **Thin, noisy tail.** The final one to two months of the combined index
+  (June-July 2026) reverse sharply in *both* sub-indices simultaneously —
+  treated as noise here, not a new trend, but worth re-checking in 6-12
+  months.
+- **Small, hand-picked, all-public company set — partially mitigated for
+  Wave 2.** 5 companies for EDGAR, 7 tickers for market prices, all of them
+  public incumbents or already-public 2010s fintechs. The market-wide EDGAR
+  check (`charts/edgar_marketwide.png`) confirms the "thin until 2024-2025"
+  shape isn't a 5-company artifact, but the underlying gap remains: there is
+  still no way, with any data collected here, to see a private AI-native
+  challenger even if one existed and was winning right now.
+- **`VERDICT.md` Part 3 (banks likely absorb the AI wave) is a prediction,
+  explicitly labeled as such.** It should not be cited with the same
+  confidence as the parts that describe what already happened.
 
 ## Config
 

@@ -157,33 +157,6 @@ existing compute/data budgets, and the fact that (per Part 1) the banks are
 the ones with the profits to fund an AI build-out right now, while several of
 the would-be Wave 1 challengers were posting losses as recently as 2022-2023.
 
-## Limitations — read before over-citing this
-
-- **Proxies, not ground truth.** Search interest measures attention, not
-  adoption. Filing language measures what companies *say*, not what they
-  ship or how much revenue it drives. Stock price reflects expectations, not
-  realized market share. Net income is a real financial outcome, but only
-  four fiscal years are available per company via `yfinance`, too short to
-  fully separate a rate-cycle effect from company-specific factors.
-- **Short Wave 2 window.** The genuine acceleration signal covers roughly
-  2024-2026 — about two years. A single flat year would meaningfully change
-  the picture; this cannot yet be distinguished from a temporary spike with
-  full confidence.
-- **Thin, noisy tail.** The final one to two months of the combined index
-  (June-July 2026) reverse sharply in *both* sub-indices simultaneously —
-  treated as noise here, not a new trend, but worth re-checking in 6-12
-  months.
-- **Small, hand-picked, all-public company set — partially mitigated for
-  Part 2.** 5 companies for EDGAR, 7 tickers for market prices, all of them
-  public incumbents or already-public 2010s fintechs. The market-wide EDGAR
-  check above confirms the "thin until 2024-2025" shape isn't a 5-company
-  artifact, but the underlying gap remains for Part 3: there is still no way,
-  with any data collected here, to see a private AI-native challenger even
-  if one existed and was winning right now.
-- **Part 3 is a prediction, explicitly labeled as such.** It should not be
-  cited with the same confidence as Parts 1 and 2, which describe what
-  already happened.
-
 ## Bottom line
 
 **Fintech didn't die, and AI hasn't clearly taken over anything yet.** The
