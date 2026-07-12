@@ -37,6 +37,7 @@ the linear trend.
 ├── collect_edgar.py       # data collection: SEC EDGAR filing mentions
 ├── build_index.py         # builds sub-indices + composite, runs break tests
 ├── make_charts.py         # the three headline charts (reads output/, writes charts/)
+├── app.py                 # Streamlit app: live sliders, recomputes in real time
 ├── data/
 │   ├── raw/                   # prices.csv, fundamentals.csv, indexed_performance.csv,
 │   │                          # wave1_trends.csv, wave2_trends.csv, edgar_mentions.csv
@@ -109,7 +110,7 @@ renders the three headline charts into `charts/`.
 ## Quick start
 
 ```bash
-pip install requests pandas numpy scipy statsmodels ruptures matplotlib pytrends
+pip install requests pandas numpy scipy statsmodels ruptures matplotlib pytrends streamlit
 
 # 1. collect data -> writes data/raw/*.csv, data/processed/*.csv, charts/*.png
 python collect_market_data.py
@@ -123,6 +124,26 @@ python build_index.py
 # 3. generate the three headline charts -> charts/*.png
 python make_charts.py
 ```
+
+## Interactive app
+
+```bash
+streamlit run app.py
+```
+
+`app.py` is a live version of steps 2-3 above: sliders for the composite
+weight (`W1_WEIGHT`), PELT break-detection penalty, and momentum window
+recompute the sub-indices, break dates, and Chow tests on every change —
+Streamlit reruns the script top-to-bottom on each interaction, so there's no
+separate "rebuild" step. It imports `build_indices()` and
+`run_break_analysis()` straight from `build_index.py` (which now accepts
+`momentum_window`/`pelt_penalty` overrides for this purpose, defaulting to
+the same `CONFIG` constants the CLI uses) and reuses `make_charts.py`'s
+color palette and break-annotation helper, so the live charts can't drift
+from the static PNGs' numbers or styling. If `data/raw/*.csv` is missing, a
+sidebar toggle switches to the same synthetic demo data as `--synthetic`
+elsewhere in this project (clearly labeled — moving sliders changes how the
+data is combined and tested, never which data is loaded).
 
 ## Synthetic demo mode
 

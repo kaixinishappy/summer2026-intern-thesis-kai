@@ -335,11 +335,15 @@ def chow_test(series: pd.Series, break_date: str) -> dict:
             "p_value": round(float(p), 5), "significant_5pct": bool(p < 0.05)}
 
 
-def run_break_analysis(res: IndexResult) -> dict:
+def run_break_analysis(res: IndexResult, momentum_window: int = MOMENTUM_WINDOW,
+                       pelt_penalty: float = PELT_PENALTY) -> dict:
+    """momentum_window/pelt_penalty default to the module CONFIG constants so
+    the CLI (main(), below) is unaffected -- exposed as overrides so app.py's
+    Streamlit sliders can recompute breaks live without touching CONFIG."""
     df = res.df
     out = {"used_synthetic": res.used_synthetic, "weight_w1": res.weight_w1, "series": {}}
     for col in ("wave1", "wave2", "FDI"):
-        det = detect_breaks(df[col])
+        det = detect_breaks(df[col], window=momentum_window, penalty=pelt_penalty)
         chow = [chow_test(df[col], bd) for bd in det["break_dates"]]
         out["series"][col] = {"break_dates": det["break_dates"],
                               "n_breaks": det["n_breaks"],
