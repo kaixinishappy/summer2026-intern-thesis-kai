@@ -1,42 +1,19 @@
-# Verdict: Did FinTech Lose to the Banks, or Is a Bigger AI Wave About to Hit?
+# Verdict: FinTech Disruption of Traditional Banking
 
-**Thesis question:** Digital payment platforms, neobanks, and embedded finance
-players have taken significant market share from legacy institutions. Has that
-disruption (Wave 1) run its course, or is a second wave of AI-native financial
-services (Wave 2) only now beginning?
+**Thesis question:** Digital payment platforms, neobanks, and embedded finance players have taken significant market share from legacy institutions. Thesis evaluate whether FinTech disruption has run its course or whether the second wave of AI-native financial services is just beginning
 
 ## Verdict
 
-Both framings — "fintech lost" and "AI is about to disrupt the disruptors" —
-are too simple. The honest, data-backed verdict has three parts:
+The evidence suggests that both common narratives—that fintech has permanently displaced traditional banks, and that AI-native financial firms are poised to disrupt the disruptors—are oversimplifications.
 
-1. **The first wave of fintech has, in a real sense, already lost.** The
-   2010-2021 generation of app-based challengers (Robinhood-style neobanks,
-   PayPal, Block/Square) mostly built nicer banking apps, not a structurally
-   different kind of bank. Several of them lost money outright in 2022 while
-   the incumbents' profits grew. The public banks have since re-absorbed
-   the price leadership these companies briefly took. This part is well
-   evidenced — the companies are public, multi-year, and the data is clean.
-2. **The second wave, AI-native finance, cannot actually be measured yet** —
-   and that thinness is itself the finding, not a gap to paper over. The
-   companies that would represent this wave are mostly private or too new to
-   have meaningful stock history, so there is no honest way to price "is
-   AI-native finance winning." What *can* be measured — search attention,
-   regulatory disclosure language — is present, but only barely, and only
-   since 2024.
-3. **The most likely real outcome is a repeat, not a reversal: the banks
-   probably absorb the AI wave too.** The dramatic "banks are too old and
-   clunky to use AI" story is a live possibility, not a demonstrated one —
-   and one relevant data point in this project (below) is at least
-   consistent with the opposite: incumbents, not challengers, are the ones
-   currently showing up in the AI-disclosure evidence.
+The **first wave of fintech** has, in many respects, already reached its limits. Between 2010 and 2021, digital payment platforms, neobanks, and fintech challengers such as PayPal, Block (formerly Square), and Robinhood primarily differentiated themselves through superior user experience rather than fundamentally different banking models. Although these firms captured market share and reshaped customer expectations, many experienced significant profitability challenges after 2021, while incumbent banks regained momentum as rising interest rates strengthened their earnings. As a result, traditional institutions have largely reclaimed the pricing power and competitive position that fintech firms briefly challenged. This conclusion is supported by robust, transparent financial data from publicly listed companies over multiple years.
 
-The single most defensible technical result in the whole project is that
-**splitting Wave 1 and Wave 2 apart reveals a story that looking at a blended
-index gets wrong** — not because the blend is flat (it isn't, in the real
-data), but because it silently misattributes which wave is driving it. See
-**Part 4** below — this needed correcting from an earlier draft of this
-verdict, and the corrected version is stronger than the original claim.
+The **second wave of AI-native finance** presents a fundamentally different challenge, but one that cannot yet be evaluated with the same level of confidence. Most AI-first financial firms remain private or are too young to provide meaningful financial or market performance data. Consequently, there is insufficient evidence to determine whether AI-native firms are creating lasting competitive advantages or simply attracting early attention. The available indicators—such as Google search interest and AI-related regulatory disclosures—show only modest increases beginning in 2024. Rather than representing a weakness of the analysis, this lack of measurable evidence is itself an important finding: the AI-native wave is still too early to assess conclusively.
+
+Taken together, the evidence points toward a more likely outcome: **incumbent banks are better positioned to absorb AI than to be displaced by it.** While the narrative that legacy institutions are too slow or technologically outdated remains plausible, current evidence provides little empirical support. Instead, the limited observable data suggests that established banks are adopting and disclosing AI initiatives at least as actively as emerging challengers.
+
+The project's strongest empirical contribution is the distinction between the two waves of fintech innovation. Treating fintech as a single, continuous phenomenon obscures important structural differences. Separating the first wave of app-based challengers from the emerging AI-native wave reveals that they are driven by fundamentally different dynamics and stages of maturity. This distinction provides a more accurate interpretation of the evidence than a blended analysis, which risks attributing observed trends to the wrong source.
+
 
 ---
 
@@ -91,7 +68,7 @@ where it partially, abruptly rebounds. Momentum
 losing ground year over year during the period this project would call
 Wave 1's "disruption."
 
-## Part 2: Wave 2 (AI-native finance) is not yet measurable — and that's informative, not a gap
+## Part 2: Wave 2 (AI-native finance) is not yet measurable
 
 This project cannot price "is AI-native finance winning" the way it can
 price Wave 1, because the companies that would represent that wave are
@@ -179,45 +156,6 @@ is weak evidence, not strong evidence. What tips the prediction toward
 existing compute/data budgets, and the fact that (per Part 1) the banks are
 the ones with the profits to fund an AI build-out right now, while several of
 the would-be Wave 1 challengers were posting losses as recently as 2022-2023.
-
-## Part 4: What "averaging vs. splitting" actually shows (corrected)
-
-An earlier draft of this project's hypothesis claimed that a blended
-Wave-1-plus-Wave-2 index would show *nothing dramatic* — that averaging a
-fading wave against a rising one cancels the signal, and only splitting them
-apart reveals the story. Checking that claim against the actual pipeline
-output shows it's **not quite right, and the corrected version is a
-sharper point**:
-
-```
-Real data, composite FDI:      2 breaks detected (Apr 2021, Jun 2025)
-                                Chow p = 0.006 and p < 0.001 — both significant
-Synthetic demo data, FDI:      0 breaks detected at all
-```
-
-The "averaging cancels the signal" story is exactly what the **synthetic
-demo** shows (`output/break_results_synthetic.json`) — it was built by
-construction to prove that point. It is **not** what the real collected data
-shows. In the real run, the blended index has two highly significant,
-dramatic turning points. So "you'd see nothing in the blend" is false for
-this project's actual result.
-
-What *is* true, and is the better version of the same insight: the blended
-FDI's two break dates are **identical to Wave 1's alone** (April 2021, June
-2025), purely because Wave 1 and Wave 2 happen to both inflect upward around
-the same months in 2025. Read the blend at face value and you'd date "the AI
-story" to April 2021 — which is actually Wave 1 rolling over, unrelated to
-AI. **The blend doesn't hide that something happened; it misattributes what
-happened and when.** Splitting the waves apart is what lets you correctly
-date and assign each story to its real cause — not what makes an otherwise
-invisible signal visible.
-
-`charts/incumbent_response.png` adds a related nuance: incumbents'
-AI-disclosure ramp doesn't move *simultaneously* with fintech market
-pressure — it lags. Fintech pressure (Wave 1) peaked in 2021; AI-language
-intensity actually dips through 2023-2024 before climbing into 2025-2026.
-The banks' formal AI disclosure shows up years after the competitive threat
-that (per Part 3) might be motivating it, not concurrently with it.
 
 ## Limitations — read before over-citing this
 
