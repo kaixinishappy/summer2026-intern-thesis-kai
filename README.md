@@ -103,7 +103,16 @@ intelligence"` — the saturated baseline). Regulatory disclosure carries legal
 weight, unlike a press release, so this is the strongest evidence layer in the
 project. Writes:
 - `data/raw/edgar_mentions.csv` — long format, one row per company/year/query
-- `charts/edgar_mentions.png`
+
+No chart of its own — see `collect_edgar_marketwide.py` below, which reads
+this CSV and charts the `agentic` series against the entire market.
+
+**`collect_edgar_marketwide.py`** — extends `collect_edgar.py`'s `agentic`
+query with no company filter, across every 10-K filer in EDGAR, to check
+whether the 5-company sample's near-zero-then-2026 shape is real or just an
+artifact of which 5 companies got picked. Writes:
+- `data/raw/edgar_marketwide.csv` — year, query, total_filings (market-wide)
+- `charts/edgar_marketwide.png` — 5-company sample vs. market-wide, `agentic` query
 
 **`build_index.py`** — the combination step. Loads the three collectors'
 real output (raises `FileNotFoundError` if any is missing — no automatic
@@ -192,14 +201,16 @@ searching "agentic AI banking" before then) and only turns on in 2024-2025,
 reaching ~22 (still well below Wave 1's ~34) by 2026 — the "Wave 2 is only
 just beginning" claim, visible directly in search behavior.
 
-**`charts/edgar_mentions.png`** (from `collect_edgar.py`) — count of filings
-per year matching `"artificial intelligence"` (the `ai_broad` query), grouped
-by company category. Nearly every company mentions AI in nearly every annual
-filing every year back to 2019 — this series is a saturated baseline (as the
-collector script's own docstring predicts), which is why it's mainly useful
-as a steady denominator rather than a discriminating signal on its own. (The
-`agentic`-phrase-family query, not charted here, is the one expected to be
-genuinely near-zero before ~2023; see `data/raw/edgar_mentions.csv`.)
+**`charts/edgar_marketwide.png`** (from `collect_edgar_marketwide.py`) — two
+stacked panels sharing an x-axis: market-wide `agentic` filing counts across
+every SEC 10-K filer (top) against the 5-company sample's `agentic` counts
+(bottom), since the two are on wildly different scales. Both panels show the
+same shape independently: near-zero for years, then a sharp jump in the most
+recent cycle (5-company sample: 0 every year 2019-2025, then 4 filings in
+2026 — one each from JPM, HSBC, PayPal, and Block; market-wide: low single
+digits through 2024, then ~111 in 2025 and ~383 in 2026). This is the
+project's answer to "is the thinness real, or just an artifact of which 5
+companies got picked" — see `VERDICT.md` Part 2.
 
 **`charts/two_wave_index.png`** — the two z-scored sub-indices plus the
 composite FDI, with detected break dates annotated as vertical lines. In the
@@ -212,10 +223,13 @@ Aug 2024 for Wave 2 — all significant at the 5% level (Chow p < 0.001).
 **`charts/momentum_handoff.png`** — the 12-month change (momentum) in each
 sub-index, the same data the break detection actually runs on. Wave 1
 momentum is negative for most of 2021-2025 (red-shaded region — literally
-losing ground year over year) while Wave 2 momentum is positive and rising
-over the same stretch; both spike together at the very end of the series
-(2026), which is the composite FDI's most recent and least-confirmed move —
-worth treating as provisional rather than a settled trend given how few
+losing ground year over year). Wave 2 momentum actually *declines* over
+2021-2023 (going negative itself around early 2023) before turning and
+accelerating from 2024 onward — so the "handoff" is a crossover around
+2023-2024, not two lines moving in opposite directions the whole time. Both
+spike together at the very end of the series (2026), which is the composite
+FDI's most recent and least-confirmed move — worth treating as provisional
+rather than a settled trend given how few
 months of data support it.
 
 **`charts/incumbent_response.png`** — market relative strength (red, left

@@ -13,8 +13,8 @@ are too simple. The honest, data-backed verdict has three parts:
 1. **The first wave of fintech has, in a real sense, already lost.** The
    2010-2021 generation of app-based challengers (Robinhood-style neobanks,
    PayPal, Block/Square) mostly built nicer banking apps, not a structurally
-   different kind of bank. When rates rose, several of them lost money outright
-   while the incumbents' profits grew. The public banks have since re-absorbed
+   different kind of bank. Several of them lost money outright in 2022 while
+   the incumbents' profits grew. The public banks have since re-absorbed
    the price leadership these companies briefly took. This part is well
    evidenced — the companies are public, multi-year, and the data is clean.
 2. **The second wave, AI-native finance, cannot actually be measured yet** —
@@ -62,9 +62,8 @@ traditional banks, which barely participated in the 2021 boom, have been
 compounding steadily since 2023-2024 and are now either the best performers
 (JPM) or have fully caught back up (BCS, HSBC).
 
-**Profitability evidence — new, and it strengthens the "struggled to make
-money when rates rose" mechanism (`data/raw/fundamentals.csv`, not
-previously wired into any chart in this project):**
+**Profitability evidence (`data/raw/fundamentals.csv`, not previously wired
+into any chart in this project):**
 
 | Ticker | 2022 net income | 2023 net income |
 |---|---|---|
@@ -74,25 +73,8 @@ previously wired into any chart in this project):**
 | JPM | +$37.7B | +$49.6B |
 | HSBC | +$15.6B | +$23.5B |
 
-2022 was the fastest Fed hiking cycle in decades, and it's exactly the year
-all three disruptors in this dataset post operating losses, while the two
-banks' profits grew substantially. Higher rates directly pad bank net
-interest margins while raising the cost of capital for often-unprofitable,
-capital-intensive challengers — the timing here lines up with that mechanism.
-
-**Now checked directly, not just asserted (`collect_rates.py`,
-`data/raw/fed_funds_rate.csv`, `charts/rates_vs_netincome.png`):** the
-effective Fed funds rate was pinned near zero (0.06%-0.08%) through all of
-2021, then rises essentially the entire way through 2022 and into 2023,
-peaking at **5.33% in August 2023** — the steepest, fastest climb in the
-whole 2018-2026 series. Plotted directly against each company's net income
-in three stacked panels (rate / banks / disruptors, kept on separate axes
-since a $58B JPM year and a -$320M SOFI year can't share one linear scale),
-the disruptors' loss years sit visibly inside the hiking window while the
-banks' income climbs through the same stretch without interruption. This is
-still a timing correlation, not a controlled causal test (no counterfactual
-"disruptors under flat rates" exists to compare against) — but it's now a
-plotted correlation against real Fed data, not a claim taken on faith.
+2022 was a losing year for these three disruptors, while both banks' profits
+grew substantially.
 
 **What this evidence can't confirm:** whether banks won by *copying features*
 or *acquiring* challengers is a plausible real-world mechanism but not
@@ -120,7 +102,8 @@ verdict takes — is to say so, and to treat the thinness of every measurable
 proxy as evidence that the wave is early, not evidence that it's absent.
 
 **SEC filings — the sharpest available signal, and it's thin by design, not by
-accident (`data/raw/edgar_mentions.csv`)**. Filings were searched for
+accident (`data/raw/edgar_mentions.csv`, charted alongside the market-wide
+check below in `charts/edgar_marketwide.png`)**. Filings were searched for
 `"artificial intelligence"` (`ai_broad`, the saturated baseline everyone
 already uses) and the "AI agent" / "agentic AI" phrase family (`agentic`, the
 Wave-2-specific language). By year, summed across all 5 companies:
