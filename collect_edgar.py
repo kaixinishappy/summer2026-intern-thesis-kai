@@ -47,7 +47,7 @@ import numpy as np
 
 # REQUIRED by SEC: identify yourself with a real name/email. Generic or
 # missing User-Agents get rate-limited or blocked outright.
-HEADERS = {"User-Agent": "Kaixin Independent Research Project kaixin@example.com"}
+HEADERS = {"User-Agent": "Kaixin Independent Research Project teekaixin28@gmail.com"}
 
 # HSBC is a foreign private issuer and files an annual report on Form 20-F,
 # not 10-K -- everyone else here files a standard 10-K.
