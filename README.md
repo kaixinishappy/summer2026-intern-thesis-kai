@@ -191,7 +191,7 @@ spiking) is baked in by construction in `synthetic_sources()` and
 - (if `--synthetic` was used) matching `output/*_synthetic.*` and
   `charts/*_synthetic.png` files, entirely separate from the real ones above
 
-## Limitations — read before over-citing this
+## Limitations
 
 - **Proxies, not ground truth.** Search interest measures attention, not
   adoption. Filing language measures what companies *say*, not what they
