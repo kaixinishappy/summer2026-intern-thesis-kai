@@ -23,6 +23,14 @@ only how it's combined/tested.
 
 import os
 
+from dotenv import load_dotenv
+# Anchored to this file's directory, not the current working directory, so
+# `streamlit run app.py` finds .env regardless of where it's launched from.
+# Reads GROQ_API_KEY (and anything else in .env, gitignored) into
+# os.environ -- a no-op if the file doesn't exist, so this is safe to run
+# even before you've created one.
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+
 import matplotlib
 matplotlib.use("Agg")  # must come before pyplot import: Streamlit runs this
 # script off the main thread, and matplotlib's default macOS/Cocoa backend
@@ -33,6 +41,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
+import ai_assistant
 from build_index import (
     EDGAR_CSV,
     MARKET_CSV,
@@ -218,3 +227,83 @@ st.caption(
     f"PELT penalty = {pelt_penalty} · momentum window = {momentum_window} months"
     + (" · **SYNTHETIC**" if res.used_synthetic else "")
 )
+
+# ---------------------------------------------------------------------------
+# AI Research Assistant (Groq) -- grounded in the exact df/breaks computed
+# above, so it can't drift from the sliders or invent statistics not present
+# in this run. Stateless per call: every question rebuilds the context fresh
+# from whatever the sliders are set to *right now*.
+# ---------------------------------------------------------------------------
+
+st.divider()
+st.subheader("🤖 AI Research Assistant")
+
+api_key = os.environ.get("GROQ_API_KEY") or st.session_state.get("groq_api_key")
+
+if not api_key:
+    st.caption(
+        "Grounded in the exact numbers computed above -- ask questions or "
+        "generate a live executive summary reflecting the current sliders."
+    )
+    with st.expander("Enter a Groq API key to enable this section", expanded=True):
+        key_input = st.text_input(
+            "Groq API key", type="password",
+            help="Free, no billing card required, at "
+                 "https://console.groq.com/keys. Kept only in this "
+                 "session's memory -- never written to disk.",
+        )
+        if key_input:
+            st.session_state["groq_api_key"] = key_input
+            st.rerun()
+    st.caption("Or set a `GROQ_API_KEY` environment variable before launching the app.")
+else:
+    context = ai_assistant.build_data_context(
+        df, breaks, w1_weight, pelt_penalty, momentum_window, res.used_synthetic
+    )
+
+    tab_summary, tab_chat = st.tabs(["Live summary", "Ask a question"])
+
+    with tab_summary:
+        st.caption(
+            "Regenerates an executive-summary paragraph reflecting the "
+            "*current* slider settings -- compare it against VERDICT.md's "
+            "written analysis at the default 50/50 weight."
+        )
+        if st.button("Generate summary"):
+            with st.spinner("Asking Groq..."):
+                try:
+                    st.session_state["ai_summary"] = ai_assistant.generate_summary(context, api_key)
+                except Exception as e:
+                    st.session_state["ai_summary"] = None
+                    st.error(f"Groq request failed: {e}")
+        if st.session_state.get("ai_summary"):
+            st.markdown(st.session_state["ai_summary"])
+
+    with tab_chat:
+        st.caption(
+            "Answers are grounded in the numbers shown above -- ask about "
+            "specific breaks, values, or what the limitations mean."
+        )
+        if "ai_chat_history" not in st.session_state:
+            st.session_state["ai_chat_history"] = []
+
+        for msg in st.session_state["ai_chat_history"]:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        question = st.chat_input("Ask about the findings...")
+        if question:
+            st.session_state["ai_chat_history"].append({"role": "user", "content": question})
+            with st.chat_message("user"):
+                st.markdown(question)
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    try:
+                        answer = ai_assistant.answer_question(
+                            question, context, api_key,
+                            history=st.session_state["ai_chat_history"][:-1],
+                        )
+                    except Exception as e:
+                        answer = f"Groq request failed: {e}"
+                st.markdown(answer)
+            st.session_state["ai_chat_history"].append({"role": "assistant", "content": answer})

@@ -38,6 +38,7 @@ the linear trend.
 ├── build_index.py         # builds sub-indices + composite, runs break tests
 ├── make_charts.py         # the three headline charts (reads output/, writes charts/)
 ├── app.py                 # Streamlit app: live sliders, recomputes in real time
+├── ai_assistant.py        # Groq research assistant: live summary + Q&A, used by app.py
 ├── data/
 │   ├── raw/                   # prices.csv, fundamentals.csv, indexed_performance.csv,
 │   │                          # wave1_trends.csv, wave2_trends.csv, edgar_mentions.csv
@@ -110,7 +111,7 @@ renders the three headline charts into `charts/`.
 ## Quick start
 
 ```bash
-pip install requests pandas numpy scipy statsmodels ruptures matplotlib pytrends streamlit
+pip install requests pandas numpy scipy statsmodels ruptures matplotlib pytrends streamlit groq python-dotenv
 
 # 1. collect data -> writes data/raw/*.csv, data/processed/*.csv, charts/*.png
 python collect_market_data.py
@@ -144,6 +145,47 @@ from the static PNGs' numbers or styling. If `data/raw/*.csv` is missing, a
 sidebar toggle switches to the same synthetic demo data as `--synthetic`
 elsewhere in this project (clearly labeled — moving sliders changes how the
 data is combined and tested, never which data is loaded).
+
+### AI Research Assistant (Groq)
+
+Below the charts, an "AI Research Assistant" section (`ai_assistant.py`) adds
+two Groq-powered features, both grounded in the exact `df`/`breaks` objects
+`app.py` just recomputed — never a static copy of `VERDICT.md`:
+
+- **Live summary** — regenerates a short executive-summary paragraph that
+  reflects whatever the sliders are *currently* set to, so you can compare it
+  against `VERDICT.md`'s written verdict at the default 50/50 weight.
+- **Ask a question** — a chat interface for questions about the current run
+  (break dates, F-statistics, what a limitation means, etc.).
+
+Every call rebuilds its context fresh from the live numbers and is instructed
+to only cite figures present in that context — it can't invent a statistic or
+silently reuse a stale answer from before you moved a slider. It also refuses
+to blur the project's own epistemic distinctions: Wave 1 findings get stated
+with real confidence, Wave 2 findings are flagged as thin/early evidence, and
+"banks absorb the AI wave" is treated as the labeled prediction it is, not a
+finding.
+
+Needs a Groq API key — free, no billing card required, at
+<https://console.groq.com/keys>. Three ways to supply it, in order of
+precedence:
+1. **`.env` file (recommended for local dev)** — copy `.env.example` to
+   `.env` and paste your key in as `GROQ_API_KEY=...`. `.env` is gitignored
+   and loaded automatically by `app.py` on startup via `python-dotenv`; it
+   never gets committed.
+2. **Environment variable** — `export GROQ_API_KEY=...` before launching.
+3. **Sidebar input** — paste it into the app at runtime if you'd rather not
+   use a file; kept in Streamlit's session memory only, never written to
+   disk.
+
+(This originally targeted Gemini; switched to Groq after the available
+Gemini key(s) required a funded Google Cloud billing account before
+unlocking any quota, confirmed across two separate projects. `ai_assistant.py`
+uses the official `groq` Python SDK, an OpenAI-compatible chat-completions
+API.)
+
+If no key is present through any of these, the app still runs normally —
+this section just shows the key prompt instead of the summary/chat tabs.
 
 ## Synthetic demo mode
 
