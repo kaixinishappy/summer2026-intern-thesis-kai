@@ -31,7 +31,7 @@ Outputs:
     data/raw/edgar_mentions.csv   (long format: one row per company/year/query)
 
 No chart of its own -- run collect_edgar_marketwide.py next, which reads this
-CSV and produces charts/edgar_marketwide.png (5-company sample vs. entire
+CSV and produces charts/edgar_marketwide.png (7-company sample vs. entire
 market, for the "agentic" query).
 """
 
@@ -49,12 +49,20 @@ import numpy as np
 # missing User-Agents get rate-limited or blocked outright.
 HEADERS = {"User-Agent": "Kaixin Independent Research Project teekaixin28@gmail.com"}
 
-# HSBC is a foreign private issuer and files an annual report on Form 20-F,
-# not 10-K -- everyone else here files a standard 10-K.
+# HSBC, Barclays, and Nu Holdings are foreign private issuers and file an
+# annual report on Form 20-F, not 10-K -- everyone else here files a
+# standard 10-K. Confirmed per-company via SEC submissions history
+# (data.sec.gov/submissions/CIK##########.json), not assumed -- BCS and NU
+# were originally left out of this dict despite being in the market-price
+# ticker basket (build_index.py's LEGACY_TICKERS/FINTECH_TICKERS); both
+# resolve to valid CIKs and both file 20-F, so there was no technical reason
+# to exclude them. Added to match the full 7-ticker market universe.
 COMPANIES = {
     "JPM":  {"name": "JPMorgan Chase",     "category": "traditional_bank",   "forms": "10-K"},
     "HSBC": {"name": "HSBC Holdings",      "category": "traditional_bank",   "forms": "20-F"},
+    "BCS":  {"name": "Barclays",           "category": "traditional_bank",   "forms": "20-F"},
     "SOFI": {"name": "SoFi Technologies",  "category": "neobank",            "forms": "10-K"},
+    "NU":   {"name": "Nubank",             "category": "neobank",            "forms": "20-F"},
     "PYPL": {"name": "PayPal Holdings",    "category": "embedded_finance",   "forms": "10-K"},
     "XYZ":  {"name": "Block, Inc.",        "category": "embedded_finance",   "forms": "10-K"},
 }
@@ -201,6 +209,6 @@ if __name__ == "__main__":
     if n_missing:
         print(f"NOTE: {n_missing} cell(s) failed after retries and are NaN. Re-run to fill gaps.")
 
-    print("\nDone. Next: collect_edgar_marketwide.py for the 5-company-vs-market chart, "
+    print("\nDone. Next: collect_edgar_marketwide.py for the 7-company-vs-market chart, "
           "then build_index.py to combine market + trends + EDGAR signals into the "
           "two composite indices (Wave 1 Stagnation / Wave 2 AI-Native).")

@@ -87,11 +87,11 @@ LIMITATIONS_SUMMARY = """\
 - Short Wave 2 window: the acceleration signal covers roughly 2024-2026,
   about two years -- a single flat year would meaningfully change the
   picture.
-- Small, hand-picked, public-only company set: 5 companies for EDGAR filings,
-  7 tickers for market prices. A market-wide EDGAR check (not in this app's
-  live data) confirms the "thin until 2024-2025" shape isn't a 5-company
-  artifact, but there is still no way to see a private AI-native challenger
-  even if one exists and is winning right now.
+- Small, hand-picked, public-only company set: 7 companies for EDGAR filings,
+  matching the 7 tickers used for market prices. A market-wide EDGAR check
+  (not in this app's live data) confirms the "thin until 2024-2025" shape
+  isn't a 7-company artifact, but there is still no way to see a private
+  AI-native challenger even if one exists and is winning right now.
 - "Banks likely absorb the AI wave" is an explicit prediction in this
   project's written verdict, not a finding -- it should not be cited with the
   same confidence as what already happened in Wave 1.

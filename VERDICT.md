@@ -81,21 +81,21 @@ accident (`data/raw/edgar_mentions.csv`, charted alongside the market-wide
 check below in `charts/edgar_marketwide.png`)**. Filings were searched for
 `"artificial intelligence"` (`ai_broad`, the saturated baseline everyone
 already uses) and the "AI agent" / "agentic AI" phrase family (`agentic`, the
-Wave-2-specific language). By year, summed across all 5 companies:
+Wave-2-specific language). By year, summed across all 7 companies:
 
 | Year | `agentic` mentions | `ai_broad` mentions |
 |---|---|---|
-| 2019-2025 | **0 every year** | 1 → 3 → 4 → 4 → 3 → 5 → 5 |
-| 2026 | **4 total** (JPM, HSBC, PayPal, Block — one filing each) | 5 |
+| 2019-2025 | **0 every year** | 1 → 3 → 4 → 5 → 5 → 7 → 7 |
+| 2026 | **5 total** (JPM, HSBC, Barclays, PayPal, Block — one filing each) | 7 |
 
-Seven straight years of zero, then four filings in the most recent cycle —
-across a universe of five companies. That is a real, dated first-appearance
+Seven straight years of zero, then five filings in the most recent cycle —
+across a universe of seven companies. That is a real, dated first-appearance
 in a legally-binding disclosure (not marketing copy), but it is also
 *exactly* the kind of thin signal that shouldn't be over-read into a market
 call. `ai_broad`, for comparison, is already saturated by 2019 — confirming
 it's a baseline, not a discriminator.
 
-**Checked against the entire market, not just these 5 companies
+**Checked against the entire market, not just these 7 companies
 (`collect_edgar_marketwide.py`, `data/raw/edgar_marketwide.csv`,
 `charts/edgar_marketwide.png`)** — the same `agentic` query, same form type,
 same years, but with no company filter at all, across every 10-K filer in
@@ -103,16 +103,16 @@ EDGAR:
 
 | Year | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 |
 |---|---|---|---|---|---|---|---|---|
-| Market-wide `agentic` filings | 5 | 1 | 0 | 1 | 3 | 6 | **111** | **383** |
+| Market-wide `agentic` filings | 5 | 1 | 0 | 1 | 3 | 6 | **111** | **388** |
 
 This is the single strongest piece of evidence in the whole project for "the
-thinness is early, not absent, and not an artifact of a 5-company sample."
+thinness is early, not absent, and not an artifact of a 7-company sample."
 Market-wide, `agentic` language sits in the low single digits — against a
 10-K filer population in the tens of thousands — for six straight years,
 then jumps roughly 18x in 2025 and grows further in 2026. That's the same
-shape as the 5-company sample, at a completely different scale, found
+shape as the 7-company sample, at a completely different scale, found
 independently. It directly answers the obvious objection to Part 2: no, this
-isn't just an artifact of which 5 companies happened to get picked.
+isn't just an artifact of which 7 companies happened to get picked.
 
 (Two data points here needed manual re-verification: the unscoped market-wide
 query is noticeably flakier than the per-company queries — it returned a
@@ -139,10 +139,14 @@ The dramatic version of the Wave 2 thesis assumes incumbent banks are too
 encumbered by legacy infrastructure to use AI effectively, leaving room for a
 new AI-native challenger to repeat the Wave 1 playbook. That assumption is
 not well supported by anything measurable here, and one available data point
-leans the other way: **all four companies whose 2026 filings contain
+leans the other way: **all five companies whose 2026 filings contain
 `agentic` language are already-established incumbents in this dataset — JPM,
-HSBC, PayPal, and Block.** None are a new AI-native entrant, because none
-exist in the sample.
+HSBC, Barclays, PayPal, and Block.** None are a new AI-native entrant, because
+none exist in the sample. Notably, **neither neobank in the sample — SoFi nor
+Nubank — shows `agentic` language even in 2026**; the signal is concentrated
+entirely among the traditional banks and the older, already-public
+embedded-finance players, which is the opposite of what the "AI-native
+upstart" version of the Wave 2 thesis would predict.
 
 This is **consistent with** "incumbents move first," not **proof of** it —
 be precise about that distinction if you cite it. The dataset was built from

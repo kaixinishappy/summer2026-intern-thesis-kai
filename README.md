@@ -70,12 +70,15 @@ management"), weekly since 2018. Aggregates to yearly averages and writes:
 - `charts/trends_comparison.png`
 
 **`collect_edgar.py`** — queries SEC EDGAR's full-text search API for how
-often each company's annual filing (10-K, or 20-F for HSBC) matches two query
-sets per year since 2019: `"agentic"` (the "AI agent" / "agentic AI" phrase
+often each company's annual filing (10-K, or 20-F for HSBC, Barclays, and
+Nubank — all three are foreign private issuers) matches two query sets per
+year since 2019: `"agentic"` (the "AI agent" / "agentic AI" phrase
 family — near-zero until it isn't) and `"ai_broad"` (`"artificial
 intelligence"` — the saturated baseline). Regulatory disclosure carries legal
 weight, unlike a press release, so this is the strongest evidence layer in the
-project. Writes:
+project. Covers all 7 tickers from the market-price basket (BCS and NU were
+originally left out of this collector despite being valid SEC filers with
+real CIKs — added to close that gap). Writes:
 - `data/raw/edgar_mentions.csv` — long format, one row per company/year/query
 
 No chart of its own — see `collect_edgar_marketwide.py` below, which reads
@@ -83,10 +86,10 @@ this CSV and charts the `agentic` series against the entire market.
 
 **`collect_edgar_marketwide.py`** — extends `collect_edgar.py`'s `agentic`
 query with no company filter, across every 10-K filer in EDGAR, to check
-whether the 5-company sample's near-zero-then-2026 shape is real or just an
-artifact of which 5 companies got picked. Writes:
+whether the 7-company sample's near-zero-then-2026 shape is real or just an
+artifact of which 7 companies got picked. Writes:
 - `data/raw/edgar_marketwide.csv` — year, query, total_filings (market-wide)
-- `charts/edgar_marketwide.png` — 5-company sample vs. market-wide, `agentic` query
+- `charts/edgar_marketwide.png` — 7-company sample vs. market-wide, `agentic` query
 
 Also accepts `--synthetic` (see **Synthetic demo mode** below) — the only
 collector script that does, since it's the one piece of evidence with no
@@ -250,12 +253,12 @@ spiking) is baked in by construction in `synthetic_sources()` and
   treated as noise here, not a new trend, but worth re-checking in 6-12
   months.
 - **Small, hand-picked, all-public company set — partially mitigated for
-  Wave 2.** 5 companies for EDGAR, 7 tickers for market prices, all of them
-  public incumbents or already-public 2010s fintechs. The market-wide EDGAR
-  check (`charts/edgar_marketwide.png`) confirms the "thin until 2024-2025"
-  shape isn't a 5-company artifact, but the underlying gap remains: there is
-  still no way, with any data collected here, to see a private AI-native
-  challenger even if one existed and was winning right now.
+  Wave 2.** 7 companies for EDGAR (matching the full 7-ticker market-price
+  basket), all of them public incumbents or already-public 2010s fintechs.
+  The market-wide EDGAR check (`charts/edgar_marketwide.png`) confirms the
+  "thin until 2024-2025" shape isn't a 7-company artifact, but the underlying
+  gap remains: there is still no way, with any data collected here, to see a
+  private AI-native challenger even if one existed and was winning right now.
 - **`VERDICT.md` Part 3 (banks likely absorb the AI wave) is a prediction,
   explicitly labeled as such.** It should not be cited with the same
   confidence as the parts that describe what already happened.

@@ -25,20 +25,13 @@
     },
     "wave2": {
       "break_dates": [
-        "2022-02-28",
-        "2024-08-31"
+        "2025-06-30"
       ],
-      "n_breaks": 2,
+      "n_breaks": 1,
       "chow_tests": [
         {
-          "break_date": "2022-02-28",
-          "F_stat": 9.102,
-          "p_value": 0.00029,
-          "significant_5pct": true
-        },
-        {
-          "break_date": "2024-08-31",
-          "F_stat": 36.137,
+          "break_date": "2025-06-30",
+          "F_stat": 59.04,
           "p_value": 0.0,
           "significant_5pct": true
         }
@@ -46,20 +39,13 @@
     },
     "FDI": {
       "break_dates": [
-        "2021-04-30",
         "2025-06-30"
       ],
-      "n_breaks": 2,
+      "n_breaks": 1,
       "chow_tests": [
         {
-          "break_date": "2021-04-30",
-          "F_stat": 5.447,
-          "p_value": 0.00615,
-          "significant_5pct": true
-        },
-        {
           "break_date": "2025-06-30",
-          "F_stat": 62.349,
+          "F_stat": 74.283,
           "p_value": 0.0,
           "significant_5pct": true
         }

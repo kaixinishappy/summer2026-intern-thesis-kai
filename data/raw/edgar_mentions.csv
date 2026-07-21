@@ -31,6 +31,22 @@ HSBC,HSBC Holdings,traditional_bank,2025,2025-12-31,agentic,0
 HSBC,HSBC Holdings,traditional_bank,2025,2025-12-31,ai_broad,1
 HSBC,HSBC Holdings,traditional_bank,2026,2026-12-31,agentic,1
 HSBC,HSBC Holdings,traditional_bank,2026,2026-12-31,ai_broad,1
+BCS,Barclays,traditional_bank,2019,2019-12-31,agentic,0
+BCS,Barclays,traditional_bank,2019,2019-12-31,ai_broad,0
+BCS,Barclays,traditional_bank,2020,2020-12-31,agentic,0
+BCS,Barclays,traditional_bank,2020,2020-12-31,ai_broad,0
+BCS,Barclays,traditional_bank,2021,2021-12-31,agentic,0
+BCS,Barclays,traditional_bank,2021,2021-12-31,ai_broad,0
+BCS,Barclays,traditional_bank,2022,2022-12-31,agentic,0
+BCS,Barclays,traditional_bank,2022,2022-12-31,ai_broad,0
+BCS,Barclays,traditional_bank,2023,2023-12-31,agentic,0
+BCS,Barclays,traditional_bank,2023,2023-12-31,ai_broad,1
+BCS,Barclays,traditional_bank,2024,2024-12-31,agentic,0
+BCS,Barclays,traditional_bank,2024,2024-12-31,ai_broad,1
+BCS,Barclays,traditional_bank,2025,2025-12-31,agentic,0
+BCS,Barclays,traditional_bank,2025,2025-12-31,ai_broad,1
+BCS,Barclays,traditional_bank,2026,2026-12-31,agentic,1
+BCS,Barclays,traditional_bank,2026,2026-12-31,ai_broad,1
 SOFI,SoFi Technologies,neobank,2019,2019-12-31,agentic,0
 SOFI,SoFi Technologies,neobank,2019,2019-12-31,ai_broad,0
 SOFI,SoFi Technologies,neobank,2020,2020-12-31,agentic,0
@@ -47,6 +63,22 @@ SOFI,SoFi Technologies,neobank,2025,2025-12-31,agentic,0
 SOFI,SoFi Technologies,neobank,2025,2025-12-31,ai_broad,1
 SOFI,SoFi Technologies,neobank,2026,2026-12-31,agentic,0
 SOFI,SoFi Technologies,neobank,2026,2026-12-31,ai_broad,1
+NU,Nubank,neobank,2019,2019-12-31,agentic,0
+NU,Nubank,neobank,2019,2019-12-31,ai_broad,0
+NU,Nubank,neobank,2020,2020-12-31,agentic,0
+NU,Nubank,neobank,2020,2020-12-31,ai_broad,0
+NU,Nubank,neobank,2021,2021-12-31,agentic,0
+NU,Nubank,neobank,2021,2021-12-31,ai_broad,0
+NU,Nubank,neobank,2022,2022-12-31,agentic,0
+NU,Nubank,neobank,2022,2022-12-31,ai_broad,1
+NU,Nubank,neobank,2023,2023-12-31,agentic,0
+NU,Nubank,neobank,2023,2023-12-31,ai_broad,1
+NU,Nubank,neobank,2024,2024-12-31,agentic,0
+NU,Nubank,neobank,2024,2024-12-31,ai_broad,1
+NU,Nubank,neobank,2025,2025-12-31,agentic,0
+NU,Nubank,neobank,2025,2025-12-31,ai_broad,1
+NU,Nubank,neobank,2026,2026-12-31,agentic,0
+NU,Nubank,neobank,2026,2026-12-31,ai_broad,1
 PYPL,PayPal Holdings,embedded_finance,2019,2019-12-31,agentic,0
 PYPL,PayPal Holdings,embedded_finance,2019,2019-12-31,ai_broad,0
 PYPL,PayPal Holdings,embedded_finance,2020,2020-12-31,agentic,0

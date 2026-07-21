@@ -4,9 +4,9 @@ collect_edgar_marketwide.py
 Extends collect_edgar.py's per-company "agentic" / "ai_broad" filing counts
 with a market-wide baseline: the same two queries, same form type (10-K),
 same years, but across ALL SEC filers -- no CIK filter. Answers a question
-the 5-company sample in collect_edgar.py can't: is "0 agentic mentions until
-2026" a fact about JPM/HSBC/SOFI/PYPL/XYZ specifically, or a fact about the
-entire market?
+the 7-company sample in collect_edgar.py can't: is "0 agentic mentions until
+2026" a fact about JPM/HSBC/BCS/SOFI/NU/PYPL/XYZ specifically, or a fact about
+the entire market?
 
 Run locally (needs open internet access to efts.sec.gov):
 
@@ -14,13 +14,13 @@ Run locally (needs open internet access to efts.sec.gov):
 
 Outputs:
     data/raw/edgar_marketwide.csv   (year, query, total_filings -- market-wide)
-    charts/edgar_marketwide.png     (5-company sample vs. market-wide, agentic query)
+    charts/edgar_marketwide.png     (7-company sample vs. market-wide, agentic query)
 
 Synthetic demo mode (no internet needed, matches build_index.py/make_charts.py):
 
     python collect_edgar_marketwide.py --synthetic
 
-Fabricates both the market-wide series and the 5-company sample with the same
+Fabricates both the market-wide series and the 7-company sample with the same
 near-zero-then-spike shape as the real data, entirely by construction -- NOT
 evidence for or against the two-wave thesis, same caveat as build_index.py's
 synthetic_sources(). Writes data/raw/edgar_marketwide_synthetic.csv and
@@ -43,7 +43,11 @@ OUT_DIR_CHARTS = "charts"
 for d in (OUT_DIR_RAW, OUT_DIR_CHARTS):
     os.makedirs(d, exist_ok=True)
 
-FORMS = "10-K"  # matches the form type used for all 5 sample companies except HSBC's 20-F
+FORMS = "10-K"  # matches the form type used for 4 of the 7 sample companies --
+# HSBC, Barclays (BCS), and Nu Holdings (NU) file 20-F instead (foreign
+# private issuers); collect_edgar.py queries each company with its own
+# correct form type, this market-wide check is 10-K only since it has no
+# per-company filter to vary by.
 
 # NOTE: unscoped (no-CIK) queries are noticeably flakier than the per-company
 # queries in collect_edgar.py -- observed both routine HTTP 500s (retried
@@ -52,7 +56,7 @@ FORMS = "10-K"  # matches the form type used for all 5 sample companies except H
 # The retry logic here only catches non-200 failures, so a suspiciously low
 # or zero count for a query that has nonzero counts in adjacent years is
 # worth manually re-querying before trusting it -- don't take a market-wide
-# 0 at face value the way you reasonably can for the 5-company sample.
+# 0 at face value the way you reasonably can for the 7-company sample.
 
 
 def collect_marketwide(queries: dict, start_year: int, end_year: int) -> pd.DataFrame:
@@ -82,7 +86,7 @@ def synthetic_marketwide_and_sample(start_year: int = START_YEAR, end_year: int 
     script run and produce a chart with zero internet access."""
     rng = np.random.default_rng(seed)
     years = list(range(start_year, end_year + 1))
-    companies = ["JPM", "HSBC", "SOFI", "PYPL", "XYZ"]
+    companies = ["JPM", "HSBC", "BCS", "SOFI", "NU", "PYPL", "XYZ"]
 
     mw_rows, smp_rows = [], []
     for year in years:
@@ -103,11 +107,11 @@ def synthetic_marketwide_and_sample(start_year: int = START_YEAR, end_year: int 
 
 def plot_comparison(marketwide: pd.DataFrame, sample: pd.DataFrame, out_path: str,
                     watermark: bool = False):
-    """Agentic-query filing counts: the 5-company sample vs. every 10-K filer.
+    """Agentic-query filing counts: the 7-company sample vs. every 10-K filer.
 
     Two panels sharing an x-axis (not a dual-axis overlay) since the two
     series are on wildly different scales -- market-wide 10-K filer count is
-    in the thousands, the 5-company sample tops out in single digits.
+    in the thousands, the 7-company sample tops out in single digits.
     """
     mw = marketwide[marketwide["query"] == "agentic"].set_index("year")["total_filings"]
     smp = (sample[sample["query"] == "agentic"]
@@ -117,12 +121,12 @@ def plot_comparison(marketwide: pd.DataFrame, sample: pd.DataFrame, out_path: st
 
     ax1.bar(mw.index, mw.values, color="#4a3aa7", alpha=0.85)
     ax1.set_ylabel("Market-wide 10-K filings\n(all SEC filers)")
-    ax1.set_title('"Agentic AI" language in SEC 10-K filings: 5-company sample vs. entire market',
+    ax1.set_title('"Agentic AI" language in SEC 10-K filings: 7-company sample vs. entire market',
                   fontweight="bold", loc="left", fontsize=12)
     ax1.grid(alpha=0.2, axis="y")
 
     ax2.bar(smp.index, smp.values, color="#e34948", alpha=0.85)
-    ax2.set_ylabel("5-company sample\n(JPM/HSBC/SOFI/PYPL/XYZ)")
+    ax2.set_ylabel("7-company sample\n(JPM/HSBC/BCS/SOFI/NU/PYPL/XYZ)")
     ax2.set_xlabel("Year")
     ax2.grid(alpha=0.2, axis="y")
 
@@ -149,7 +153,7 @@ if __name__ == "__main__":
 
     if args.synthetic:
         print("*** SYNTHETIC PLACEHOLDER DATA -- NOT A REAL RESULT ***")
-        print(f"=== Fabricating market-wide + 5-company EDGAR data, {START_YEAR}-{END_YEAR} ===")
+        print(f"=== Fabricating market-wide + 7-company EDGAR data, {START_YEAR}-{END_YEAR} ===")
         marketwide, sample = synthetic_marketwide_and_sample(START_YEAR, END_YEAR)
     else:
         print(f"=== Counting market-wide EDGAR 10-K filings, {START_YEAR}-{END_YEAR} ===")
