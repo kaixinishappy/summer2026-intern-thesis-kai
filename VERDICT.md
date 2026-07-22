@@ -4,7 +4,7 @@
 
 ## Verdict
 
-The **first wave of fintech** has, in many respects, already reached its limits. Between 2010 and 2021, digital payment platforms, neobanks, and fintech challengers such as PayPal, Block (formerly Square), and Robinhood primarily differentiated themselves through superior user experience rather than fundamentally different banking models. Although these firms captured market share and reshaped customer expectations, many experienced significant profitability challenges after 2021, while incumbent banks regained momentum as rising interest rates strengthened their earnings. As a result, traditional institutions have largely reclaimed the pricing power and competitive position that fintech firms briefly challenged. This conclusion is supported by robust, transparent financial data from publicly listed companies over multiple years.
+The **first wave of fintech** has, in many respects, already reached its limits. Between 2010 and 2021, digital payment platforms, neobanks, and fintech challengers such as PayPal, Block (formerly Square), and Robinhood primarily differentiated themselves through superior user experience rather than fundamentally different banking models. Although these firms captured market share and reshaped customer expectations, many experienced significant profitability challenges after 2021, while incumbent banks regained momentum as rising interest rates strengthened their earnings. As a result, traditional institutions have largely reclaimed the pricing power and competitive position that fintech firms briefly challenged. This conclusion is supported by robust, transparent financial data from publicly listed companies over multiple years, corroborated by both their own profitability numbers and a broader fintech-sector-ETF-vs-bank-sector-ETF check that shows the same rise-and-rollover shape beyond just the 7 hand-picked tickers.
 
 The **second wave of AI-native finance** presents a fundamentally different challenge, but one that cannot yet be evaluated with the same level of confidence. Most AI-first financial firms remain private or are too young to provide meaningful financial or market performance data. Consequently, there is insufficient evidence to determine whether AI-native firms are creating lasting competitive advantages or simply attracting early attention. The available indicators—such as Google search interest and AI-related regulatory disclosures—show only modest increases beginning in 2024. Rather than representing a weakness of the analysis, this lack of measurable evidence is itself an important finding: the AI-native wave is still too early to assess conclusively.
 
@@ -37,8 +37,9 @@ traditional banks, which barely participated in the 2021 boom, have been
 compounding steadily since 2023-2024 and are now either the best performers
 (JPM) or have fully caught back up (BCS, HSBC).
 
-**Profitability evidence (`data/raw/fundamentals.csv`, not previously wired
-into any chart in this project):**
+**Profitability evidence (`data/raw/fundamentals.csv`, now wired into the
+Wave 1 sub-index as `wave1_profitability` — see `build_index.py`'s
+`load_profitability()`):**
 
 | Ticker | 2022 net income | 2023 net income |
 |---|---|---|
@@ -49,7 +50,34 @@ into any chart in this project):**
 | HSBC | +$15.6B | +$23.5B |
 
 2022 was a losing year for these three disruptors, while both banks' profits
-grew substantially.
+grew substantially. Quantified as fintech-basket-average YoY growth minus
+legacy-basket-average YoY growth (a symmetric formula, since several
+fintech tickers cross from loss to profit in this window and a plain percent
+change would explode): the fintech basket closed that gap sharply in fiscal
+2023 and 2024 (+0.97, +1.03 on a roughly [-2, 2] scale — SOFI/XYZ/NU
+recovering from 2022 losses while the banks' already-large profits grew more
+slowly in relative terms), then gave essentially all of it back in fiscal
+2025 (-0.06 — back to roughly even growth rates). `yfinance` only exposes
+~4 fiscal years per company, so this is 3 usable annual data points, not a
+monthly series — thin by the same standard this project already applies to
+the EDGAR and search signals, and the reason the two Wave 1 Chow F-statistics
+above moved when this was added, rather than staying fixed.
+
+**Generalization check (`collect_market_marketwide.py`,
+`data/raw/market_marketwide.csv`, `charts/market_marketwide.png`)** — the
+same question Part 2 asks of the EDGAR signal, asked here of the price
+signal: is "fintech rose then rolled over vs. banks" a fact about the 7
+hand-picked tickers, or a fact about the sector? FINX (a broad fintech-sector
+ETF) relative to KBWB (a broad bank-sector ETF) peaked at **233** (rebased to
+100 at 2018) in **September 2020** and has since fallen to **56** by July
+2026 — below its own 2018 starting level. The 7-ticker sample peaked at
+**519** in the *same month*, September 2020, and sits at **73** by July
+2026 — also below its starting level. Different amplitude (the 7 hand-picked
+names swung harder in both directions, as a small, concentrated basket
+would), same shape, same turning point, found independently. This is the
+Part 1 analogue of Part 2's strongest piece of evidence: the "fintech's
+apparent win didn't hold" story isn't an artifact of which 7 companies got
+picked.
 
 **What this evidence can't confirm:** whether banks won by *copying features*
 or *acquiring* challengers is a plausible real-world mechanism but not
@@ -58,13 +86,21 @@ data in this project. Treat that specific mechanism as outside knowledge, not
 a finding of this codebase.
 
 **Structural break confirmation (`output/break_results.json`,
-`charts/two_wave_index.png`)** — the Wave 1 sub-index shows a significant
-break at **April 2021** (Chow F=9.094, p<0.001) where it rolls over from
-rising to declining, and a second break at **June 2025** (F=54.151, p<0.001)
-where it partially, abruptly rebounds. Momentum
+`charts/two_wave_index.png`)** — the Wave 1 sub-index (now three inputs: price,
+search, and profitability growth — see below) shows a significant break at
+**April 2021** (Chow F=17.259, p<0.001) where it rolls over from rising to
+declining, and a second break at **June 2025** (F=4.09, p=0.021) where it
+partially, abruptly rebounds — still significant at 5%, but visibly weaker
+than the price-only version of this signal, since the profitability input is
+flat through most of the 2021 window and only really moves in 2023-2025 (see
+below), which dilutes how sharply *this specific* rebound registers. Momentum
 (`charts/momentum_handoff.png`) is negative for most of 2021-2025 — literally
 losing ground year over year during the period this project would call
-Wave 1's "disruption."
+Wave 1's "disruption." The composite FDI now shows both breaks too
+(F=7.517, p=0.001 at April 2021; F=22.971, p<0.001 at June 2025) — previously
+only the June 2025 break cleared FDI's threshold; adding profitability
+strengthened, not weakened, the case that April 2021 is a real break in the
+combined index, not just the price sub-signal.
 
 ## Part 2: Wave 2 (AI-native finance) is not yet measurable
 
@@ -166,7 +202,9 @@ first wave of app-based fintech grew up, and by the measures available here
 (price, profitability, search attention), it's been substantially reabsorbed
 by the banks it once threatened — most sharply visible in the 2022 net-income
 split, where the challengers posted losses in the same year bank profits
-grew. The second wave is too early to call with market data because the
+grew, and confirmed at the broader sector level (FINX vs. KBWB) so it isn't
+just an artifact of the 7 tickers picked. The second wave is too early to
+call with market data because the
 relevant companies aren't public; what thin, measurable evidence does exist
 (EDGAR `agentic` language, search interest) is consistent with an early,
 real inflection starting around 2024, not with nothing happening. The smart

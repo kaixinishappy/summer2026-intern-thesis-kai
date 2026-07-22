@@ -1,0 +1,51 @@
+# Theme colors are anchored to make_charts.py's C_W1 (red, "#c0392b") and
+# C_W2 (blue, "#1f6feb") so the app's own accent color and the chart lines it
+# renders read as one system, not two unrelated palettes. Light and dark are
+# both defined (rather than a single [theme] block) so the in-app theme
+# toggle still works instead of locking to one mode. Structural settings
+# (font, radius, borders) that don't differ by mode live in the shared
+# top-level [theme] block -- this Streamlit version rejects them under
+# [theme.light]/[theme.dark] specifically (silently falls back, with a
+# console warning, if you put them there).
+
+[theme]
+baseRadius = "10px"
+showWidgetBorder = true
+showSidebarBorder = true
+baseFontSize = 15
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@600;700&display=swap"
+
+[theme.light]
+primaryColor = "#1f6feb"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f6f8fa"
+textColor = "#1f2328"
+borderColor = "#d0d7de"
+redColor = "#c0392b"
+blueColor = "#1f6feb"
+greenColor = "#1a7f37"
+orangeColor = "#bf8700"
+dataframeBorderColor = "#d0d7de"
+dataframeHeaderBackgroundColor = "#f6f8fa"
+
+[theme.dark]
+primaryColor = "#58a6ff"
+backgroundColor = "#0d1117"
+secondaryBackgroundColor = "#161b22"
+textColor = "#e6edf3"
+borderColor = "#30363d"
+redColor = "#e5534b"
+blueColor = "#58a6ff"
+greenColor = "#3fb950"
+orangeColor = "#d29922"
+dataframeBorderColor = "#30363d"
+dataframeHeaderBackgroundColor = "#161b22"
+
+[theme.light.sidebar]
+backgroundColor = "#f6f8fa"
+borderColor = "#d0d7de"
+
+[theme.dark.sidebar]
+backgroundColor = "#161b22"
+borderColor = "#30363d"

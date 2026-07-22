@@ -8,13 +8,15 @@ now accelerating.
 
 Pipeline
 --------
-1. Load three sources produced by the collector scripts:
+1. Load four sources produced by the collector scripts:
      - collect_market_data.py -> data/raw/prices.csv (prices for legacy vs fintech tickers)
+                               -> data/raw/fundamentals.csv (annual net income, same tickers)
      - collect_trends.py -> data/raw/wave1_trends.csv, data/raw/wave2_trends.csv
      - collect_edgar.py  -> data/raw/edgar_mentions.csv (AI-language frequency in filings)
 2. Resample everything to a common monthly frequency and z-score normalise.
 3. Build two sub-indices:
      - Wave 1 sub-index  = fintech-vs-legacy market momentum + Wave-1 search interest
+                            + fintech-vs-legacy relative profitability growth
      - Wave 2 sub-index  = Wave-2 search interest + EDGAR AI-language intensity
 4. Combine into the composite FDI (weight is configurable -> Streamlit slider later).
 5. Run structural break detection (ruptures / PELT) on the *momentum* of each
@@ -57,6 +59,7 @@ DATA_DIR = os.path.join(HERE, "data")
 OUT_DIR = os.path.join(HERE, "output")
 
 MARKET_CSV = os.path.join(DATA_DIR, "raw", "prices.csv")
+FUNDAMENTALS_CSV = os.path.join(DATA_DIR, "raw", "fundamentals.csv")
 WAVE1_TRENDS_CSV = os.path.join(DATA_DIR, "raw", "wave1_trends.csv")
 WAVE2_TRENDS_CSV = os.path.join(DATA_DIR, "raw", "wave2_trends.csv")
 EDGAR_CSV = os.path.join(DATA_DIR, "raw", "edgar_mentions.csv")
@@ -189,6 +192,54 @@ def load_edgar(path: str, query: str = "ai_broad") -> pd.Series:
     return s
 
 
+def load_profitability(path: str) -> pd.Series:
+    """Fintech-vs-legacy relative profitability growth, from annual net income.
+
+    Per-ticker YoY growth uses a symmetric formula -- (NI_t - NI_{t-1}) /
+    mean(|NI_t|, |NI_{t-1}|) -- instead of plain pct_change(), because several
+    fintech tickers cross from a net loss to a net profit within this window
+    (SOFI, XYZ, NU all lose money in 2022 per fundamentals.csv), where a plain
+    percentage change explodes or flips sign in a way that doesn't reflect
+    "how much did profitability improve." Aggregated as fintech-basket average
+    growth minus legacy-basket average growth per fiscal year-end, mirroring
+    load_market()'s fintech-vs-legacy framing for price.
+
+    yfinance only exposes ~4 fiscal years per company, so this yields only
+    ~3 usable annual growth points (fiscal 2023-2025) -- thin by construction,
+    the same caveat build_index.py already applies to the EDGAR/search
+    signals. build_indices() does not clip the shared date range to this
+    series (see the `start`/`end` comment there), so it doesn't shrink the
+    whole index down to 2023-2025; instead it's held flat at its nearest real
+    value before 2023 and after 2025 once resampled/interpolated, contributing
+    a real 3-point read where it exists and a constant elsewhere.
+    """
+    df = pd.read_csv(path)
+    if "net_income" not in df.columns or "fiscal_year" not in df.columns or "ticker" not in df.columns:
+        raise ValueError("fundamentals.csv needs 'ticker', 'fiscal_year', 'net_income' columns.")
+    df = df.dropna(subset=["net_income"]).sort_values(["ticker", "fiscal_year"])
+
+    prev = df.groupby("ticker")["net_income"].shift(1)
+    denom = (df["net_income"].abs() + prev.abs()) / 2
+    df["growth"] = (df["net_income"] - prev) / denom.replace(0, np.nan)
+    df = df.dropna(subset=["growth"])
+    df["date"] = pd.to_datetime(df["fiscal_year"].astype(int).astype(str) + "-12-31")
+
+    def basket_growth(tickers):
+        sub = df[df["ticker"].isin(tickers)]
+        if sub.empty:
+            return None
+        return sub.groupby("date")["growth"].mean()
+
+    legacy = basket_growth(LEGACY_TICKERS)
+    fintech = basket_growth(FINTECH_TICKERS)
+    if legacy is None or fintech is None:
+        raise ValueError("Could not build both legacy and fintech profitability baskets.")
+
+    rel = (fintech - legacy).resample(FREQ).mean()
+    rel.name = "wave1_profitability"
+    return rel
+
+
 # --------------------------------------------------------------------------- #
 # SYNTHETIC DEMO DATA  --  opt-in only (--synthetic), never an automatic
 # fallback. Exists so the method can be demoed without live API access (both
@@ -226,7 +277,12 @@ def synthetic_sources(seed: int = 7):
                             index=idx, name="wave2_trend")
     edgar = pd.Series(0.5 + 6.0 * w2_shape + 0.6 * w1_shape + rng.normal(0, 0.15, n),
                       index=idx, name="edgar_ai_intensity")
-    return market, wave1_trend, wave2_trend, edgar
+    # profitability growth ~ tracks wave1's rise-then-rollover shape too, but
+    # noisier (real fundamentals.csv only yields ~3 annual points, so the real
+    # signal is much thinner than this synthetic monthly series suggests)
+    profitability = pd.Series(0.3 * w1_shape + rng.normal(0, 0.12, n),
+                              index=idx, name="wave1_profitability")
+    return market, wave1_trend, wave2_trend, edgar, profitability
 
 
 # --------------------------------------------------------------------------- #
@@ -246,20 +302,31 @@ class IndexResult:
 
 def build_indices(weight_w1: float = W1_WEIGHT, use_synthetic: bool = False) -> IndexResult:
     if use_synthetic:
-        market, w1_trend, w2_trend, edgar = synthetic_sources()
+        market, w1_trend, w2_trend, edgar, profitability = synthetic_sources()
     else:
         market = load_market(MARKET_CSV)
         w1_trend = load_trends(WAVE1_TRENDS_CSV, WAVE1_TREND_TERMS, "wave1_trend")
         w2_trend = load_trends(WAVE2_TRENDS_CSV, WAVE2_TREND_TERMS, "wave2_trend")
         edgar = load_edgar(EDGAR_CSV)
+        profitability = load_profitability(FUNDAMENTALS_CSV)
 
-    df = pd.concat([market, w1_trend, w2_trend, edgar], axis=1)
+    df = pd.concat([market, w1_trend, w2_trend, edgar, profitability], axis=1)
 
-    # Clip to the range every source actually covers before filling gaps.
-    # Sources have different true end dates (e.g. edgar_mentions.csv labels a
-    # still-in-progress year with a Dec-31 date, past where market/trends data
-    # actually ends) -- without this, interpolate(limit_direction="both") would
-    # flat-fill trailing months with a stale duplicate of the last real value.
+    # Clip to the range the four *primary* sources actually cover before
+    # filling gaps. Sources have different true end dates (e.g. edgar_mentions.csv
+    # labels a still-in-progress year with a Dec-31 date, past where
+    # market/trends data actually ends) -- without this,
+    # interpolate(limit_direction="both") would flat-fill trailing months with
+    # a stale duplicate of the last real value.
+    #
+    # wave1_profitability is deliberately excluded from this clip: it's
+    # annual and only has ~3 real points (see load_profitability()), spanning
+    # a much narrower window than the other four. Including it here would
+    # shrink the *entire* index -- Wave 1's 2018-2021 rise and its April-2021
+    # rollover included -- down to just its 2023-2025 coverage. Left out of
+    # the clip, it still goes through the same interpolate() call below like
+    # every other column; outside its real range that just holds it flat at
+    # the nearest known value instead of truncating the shared timeline.
     start = max(s.first_valid_index() for s in (market, w1_trend, w2_trend, edgar))
     end = min(s.last_valid_index() for s in (market, w1_trend, w2_trend, edgar))
     df = df.loc[start:end]
@@ -268,9 +335,16 @@ def build_indices(weight_w1: float = W1_WEIGHT, use_synthetic: bool = False) -> 
     # z-score every input so units are comparable
     z = df.apply(zscore)
 
-    # sub-indices (equal weight within each wave; easy to re-weight later)
-    z["wave1"] = z[["market_rel_strength", "wave1_trend"]].mean(axis=1)
-    z["wave2"] = z[["wave2_trend", "edgar_ai_intensity"]].mean(axis=1)
+    # sub-indices (equal weight within each wave; easy to re-weight later).
+    # Re-zscored after averaging: the mean of k unit-variance z-scores has
+    # variance ~1/k, so wave1 (now 3 inputs) and wave2 (2 inputs) would land
+    # on different scales purely from input *count*, not from any real
+    # difference in how much each wave moves -- and detect_breaks() runs the
+    # same absolute PELT_PENALTY against both. Re-standardizing each composite
+    # back to unit variance keeps that penalty meaning the same thing
+    # regardless of how many raw signals feed a given wave.
+    z["wave1"] = zscore(z[["market_rel_strength", "wave1_trend", "wave1_profitability"]].mean(axis=1))
+    z["wave2"] = zscore(z[["wave2_trend", "edgar_ai_intensity"]].mean(axis=1))
 
     # composite FDI
     z["FDI"] = weight_w1 * z["wave1"] + (1 - weight_w1) * z["wave2"]
