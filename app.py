@@ -27,7 +27,7 @@ import os
 from dotenv import load_dotenv
 # Anchored to this file's directory, not the current working directory, so
 # `streamlit run app.py` finds .env regardless of where it's launched from.
-# Reads GROQ_API_KEY (and anything else in .env, gitignored) into
+# Reads GEMINI_API_KEY (and anything else in .env, gitignored) into
 # os.environ -- a no-op if the file doesn't exist, so this is safe to run
 # even before you've created one.
 load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
@@ -105,6 +105,22 @@ st.markdown(
 
 header_placeholder = st.empty()
 
+
+@st.cache_data
+def _read_verdict() -> str:
+    """VERDICT.md's content is static prose, not a slider-dependent
+    recompute, so this is cached rather than re-read every rerun like
+    ai_assistant.py's live-off-disk read (which needs to reflect edits made
+    mid-session for grounding accuracy, not just app startup)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERDICT.md")
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+@st.dialog("Written verdict", width="large")
+def _verdict_dialog():
+    st.markdown(_read_verdict())
+
 # ---------------------------------------------------------------------------
 # Sidebar controls
 # ---------------------------------------------------------------------------
@@ -170,6 +186,8 @@ with header_placeholder.container():
         st.badge(badge_text, icon=badge_icon, color=badge_color)
     st.caption("Adjust the parameters in the sidebar. The sub-indices, "
               "break dates, and Chow tests below recompute live.")
+    if st.button("Read the written verdict", icon=":material/description:"):
+        _verdict_dialog()
 
 if res.used_synthetic:
     st.warning(
@@ -305,7 +323,7 @@ with st.container(border=True):
     )
 
 # ---------------------------------------------------------------------------
-# AI Research Assistant (Groq) -- grounded in the exact df/breaks computed
+# AI Research Assistant (Gemini) -- grounded in the exact df/breaks computed
 # above, so it can't drift from the sliders or invent statistics not present
 # in this run. Stateless per call: every question rebuilds the context fresh
 # from whatever the sliders are set to *right now*.
@@ -313,25 +331,27 @@ with st.container(border=True):
 
 st.subheader(":material/smart_toy: AI research assistant")
 
-api_key = os.environ.get("GROQ_API_KEY") or st.session_state.get("groq_api_key")
+api_key = os.environ.get("GEMINI_API_KEY") or st.session_state.get("gemini_api_key")
 
 if not api_key:
     st.caption(
         "Grounded in the exact numbers computed above, ask questions or "
         "generate a live executive summary reflecting the current sliders."
     )
-    with st.expander("Enter a Groq API key to enable this section", expanded=True,
+    with st.expander("Enter a Gemini API key to enable this section", expanded=True,
                      icon=":material/key:"):
         key_input = st.text_input(
-            "Groq API key", type="password",
-            help="Free, no billing card required, at "
-                 "https://console.groq.com/keys. Kept only in this "
-                 "session's memory, never written to disk.",
+            "Gemini API key", type="password",
+            help="Free, no billing card required -- from the \"Get API key\" "
+                 "flow at https://ai.google.dev (AI Studio), not a Google "
+                 "Cloud Console / Vertex AI key, which is a different, "
+                 "billed product. Kept only in this session's memory, never "
+                 "written to disk.",
         )
         if key_input:
-            st.session_state["groq_api_key"] = key_input
+            st.session_state["gemini_api_key"] = key_input
             st.rerun()
-    st.caption("Or set a `GROQ_API_KEY` environment variable before launching the app.")
+    st.caption("Or set a `GEMINI_API_KEY` environment variable before launching the app.")
 else:
     context = ai_assistant.build_data_context(
         df, breaks, w1_weight, pelt_penalty, momentum_window, res.used_synthetic
@@ -348,12 +368,12 @@ else:
             "written analysis at the default 50/50 weight."
         )
         if st.button("Generate summary", icon=":material/auto_awesome:", type="primary"):
-            with st.spinner("Asking Groq..."):
+            with st.spinner("Asking Gemini..."):
                 try:
                     st.session_state["ai_summary"] = ai_assistant.generate_summary(context, api_key)
                 except Exception as e:
                     st.session_state["ai_summary"] = None
-                    st.error(f"Groq request failed: {e}")
+                    st.error(f"Gemini request failed: {e}")
         if st.session_state.get("ai_summary"):
             st.markdown(st.session_state["ai_summary"])
 
@@ -382,6 +402,6 @@ else:
                             history=st.session_state["ai_chat_history"][:-1],
                         )
                     except Exception as e:
-                        answer = f"Groq request failed: {e}"
+                        answer = f"Gemini request failed: {e}"
                 st.markdown(answer)
             st.session_state["ai_chat_history"].append({"role": "assistant", "content": answer})

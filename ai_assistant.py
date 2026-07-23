@@ -1,12 +1,13 @@
 """
 ai_assistant.py
 ================
-Groq-powered research assistant for the Fintech Two-Wave Disruption Index.
+Gemini-powered research assistant for the Fintech Two-Wave Disruption Index.
 
 Every answer is grounded in the *live* computed numbers -- whatever
 build_index.py's build_indices() / run_break_analysis() currently produced,
 which inside app.py reflects whatever the sidebar sliders are set to right
-now -- plus a condensed version of VERDICT.md's own stated limitations. The
+now -- plus VERDICT.md's verdict/bottom-line text and the detailed Part
+1/2/3 evidence tables, which live in README.md's Findings section. The
 model is instructed to only cite numbers present in that context and to
 preserve the project's own epistemic distinctions (Wave 1 = measured,
 Wave 2 = early/thin evidence, "banks win the AI wave" = a labeled prediction,
@@ -24,16 +25,21 @@ since the last question:
     answer_question(question, context, api_key, history) -> str
 
 Needs:
-    pip install groq
-    a Groq API key -- free, no billing card required -- at
-    https://console.groq.com/keys
+    pip install google-genai
+    a Gemini API key -- free, no billing card required -- from
+    https://ai.google.dev (the "Get API key" / AI Studio flow specifically;
+    a key issued through Google Cloud Console / Vertex AI instead is a
+    different product and does require billing -- see below)
 
-Originally built against Gemini; switched to Groq because the Google Cloud
-project behind the available Gemini key(s) required a funded billing account
-before unlocking any quota, even nominally "free tier" (confirmed across two
-separate keys/projects, both returning limit: 0). Groq's free tier works
-without a card. build_data_context() and the prompt-building logic are
-unchanged -- only _get_client()/_generate() below are provider-specific.
+Originally built against Gemini, switched to Groq after an earlier Gemini key
+returned quota limit: 0 without a funded Google Cloud billing account, then
+switched back to Gemini once it became clear that failure was specific to
+Cloud Console/Vertex AI-issued keys -- a key from ai.google.dev's AI Studio
+flow is a separate, genuinely free product with no card requirement. Groq
+remains a fine alternative if this key ever hits the same wall; see git
+history for the Groq version of _get_client()/_generate() if you need to
+switch back. build_data_context() and the prompt-building logic are
+provider-agnostic -- only _get_client()/_generate() below are Gemini-specific.
 """
 
 from __future__ import annotations
@@ -46,20 +52,19 @@ from build_index import FINTECH_TICKERS, LEGACY_TICKERS, WAVE1_TREND_TERMS, WAVE
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# llama-3.3-70b-versatile has this key's highest free-tier rate limit of the
-# models tried (12000 tokens/min on-demand, vs. 8000 for openai/gpt-oss-120b
-# and openai/gpt-oss-20b, 6000 for llama-3.1-8b-instant -- checked directly
-# against /v1/chat/completions' x-ratelimit-limit-tokens response header,
-# since Groq doesn't publish per-key limits anywhere else). That budget, not
-# raw model quality, is the binding constraint on how much CONTEXT below can
-# afford to include -- see build_data_context()'s comment on why README.md
-# isn't inlined. Swap models in your Groq console
-# (https://console.groq.com/docs/models) if your quota differs, but re-check
-# the rate-limit headers before assuming a "smarter" model actually fits.
-# Avoid groq/compound or other tool-using models here, since their web
-# search / code execution would let answers drift from CONTEXT, which is the
-# whole point of rule 1 below.
-GROQ_MODEL = "llama-3.3-70b-versatile"
+# gemini-3.6-flash: Google's current general-purpose flash model as of this
+# writing (ai.google.dev/gemini-api docs). Unlike the Groq version of this
+# file, this hasn't been load-tested against a real key's free-tier rate
+# limits yet -- Google doesn't publish exact free-tier RPM/TPM numbers
+# anywhere public, only in the AI Studio dashboard once a key exists (same
+# way Groq's limits had to be checked empirically via response headers, see
+# build_data_context()'s comment on why README.md still isn't inlined into
+# CONTEXT). If this model 429s or is deprecated, check
+# https://aistudio.google.com/rate-limit and swap here -- avoid models that
+# do their own tool use (web search, code execution) for the same reason the
+# Groq version avoided groq/compound: it would let answers drift from
+# CONTEXT, which is the whole point of rule 1 below.
+GEMINI_MODEL = "gemini-3.6-flash"
 
 SYSTEM_INSTRUCTIONS = """\
 You are a research assistant embedded in a Streamlit app for a thesis titled
@@ -74,8 +79,11 @@ current parameter settings; live-computed sub-index values, peaks, and
 detected structural breaks with Chow test F-statistics and p-values; the
 underlying raw component signals (price, search, filings, profitability) and
 what companies/keywords each one is built from; a recent-months table of
-every series; and the full, current text of this project's VERDICT.md (the
-written verdict). Follow these rules strictly:
+every series; the full, current text of this project's VERDICT.md (the
+written verdict and bottom line); and README.md's Findings section (the
+detailed Part 1/2/3 evidence -- price/profitability tables, structural break
+statistics, EDGAR filing counts, and the market-wide/sector-ETF
+generalization checks). Follow these rules strictly:
 
 1. Only cite numbers, dates, findings, or methodology details that literally
    appear in CONTEXT. Never invent a statistic, company name, date, or
@@ -85,14 +93,14 @@ written verdict). Follow these rules strictly:
    data used to demo the pipeline, not evidence for or against the thesis.
 3. Keep two things distinct, since CONTEXT now contains both:
    - LIVE numbers (sub-index values, breaks, Chow stats) reflect whatever the
-     sliders are set to *right now*, which may differ from VERDICT.md's
-     numbers -- VERDICT.md was written at the default 50/50 weight and is a
-     static snapshot, not auto-updating. If they disagree, say so rather than
-     quietly picking one.
+     sliders are set to *right now*, which may differ from the numbers in
+     VERDICT.md and README.md's Findings section -- both were written at the
+     default 50/50 weight and are static snapshots, not auto-updating. If
+     they disagree, say so rather than quietly picking one.
    - VERDICT.md's own predictions (e.g. "banks likely absorb the AI wave")
      are explicitly labeled predictions in that document, not findings --
      never present them with the same confidence as what the live numbers or
-     VERDICT.md's evidence sections show already happened.
+     README.md's Findings section show already happened.
 4. Preserve this project's own epistemic distinctions -- do not flatten them:
    Wave 1 conclusions are backed by real market/profitability data and can be
    stated with real confidence; Wave 2 conclusions rest on thin, early
@@ -142,6 +150,26 @@ def _read_project_doc(filename: str) -> str:
             return f.read()
     except FileNotFoundError:
         return f"[{filename} not found at {path} -- not available this session]"
+
+
+def _read_findings_section() -> str:
+    """Extracts just the '## Findings' section (the Part 1/2/3 evidence
+    tables that used to live in VERDICT.md, moved to README.md) rather than
+    inlining the whole README -- the rest of it (install steps, repo layout,
+    quick-start commands) isn't relevant to grounding and would only add
+    tokens for no benefit."""
+    text = _read_project_doc("README.md")
+    if text.startswith("["):  # missing-file placeholder from _read_project_doc
+        return text
+    marker = "\n## Findings"
+    start = text.find(marker)
+    if start == -1:
+        return "[Findings section not found in README.md]"
+    body = text[start + 1:]  # drop leading newline so the heading starts the string
+    lines = body.split("\n")
+    end_idx = next((i for i, line in enumerate(lines[1:], start=1)
+                     if line.startswith("## ")), len(lines))
+    return "\n".join(lines[:end_idx]).strip()
 
 
 # Raw input columns in IndexResult.df, one row per sub-index component, with
@@ -202,15 +230,16 @@ def build_data_context(df: pd.DataFrame, breaks: dict, w1_weight: float,
                         used_synthetic: bool) -> str:
     """Assembles the grounding context block from the live-computed
     IndexResult.df and run_break_analysis() output -- the same objects
-    app.py already recomputes on every slider change -- plus VERDICT.md read
-    fresh off disk, so the assistant can answer written-verdict questions,
-    not just live-number lookups. README.md is deliberately NOT inlined here
-    despite being read fresh the same way VERDICT.md is: the two together
-    would run close to or over this key's 12000 TPM Groq rate limit (see
-    GROQ_MODEL's comment) once system instructions, chat history, and the
-    question itself are added on top. The methodology facts README.md would
-    have added (tickers, keywords, sub-index formulas) are already covered
-    compactly by _component_signal_lines() below instead."""
+    app.py already recomputes on every slider change -- plus VERDICT.md (the
+    verdict + bottom line) and README.md's Findings section (the detailed
+    Part 1/2/3 evidence), both read fresh off disk, so the assistant can
+    answer written-verdict and evidence questions, not just live-number
+    lookups. Only the Findings section of README.md is extracted rather than
+    the whole file -- the rest (install steps, repo layout, quick-start
+    commands) isn't relevant to grounding and would only add tokens; see
+    _read_findings_section(). The remaining methodology facts (tickers,
+    keywords, sub-index formulas) are covered compactly by
+    _component_signal_lines() below instead."""
     start, end = df.index.min(), df.index.max()
     latest = df.iloc[-1]
     peak_w1_date = df["wave1"].idxmax()
@@ -256,32 +285,37 @@ STATIC -- written at the default 50/50 weight; may disagree with CURRENT
 PARAMETERS/LATEST VALUES above if sliders moved. Its own labeled predictions
 (e.g. "banks likely absorb the AI wave") are predictions, not findings.
 
-{_read_project_doc("VERDICT.md")}""")
+{_read_project_doc("VERDICT.md")}
+
+--- DETAILED FINDINGS (README.md's Findings section, live off disk, current as of this session) ---
+STATIC, same default-50/50-weight snapshot as VERDICT.md above -- the price,
+profitability, structural-break, and EDGAR evidence tables behind the
+verdict (Parts 1-3).
+
+{_read_findings_section()}""")
 
     return "\n".join(parts)
 
 
 def _get_client(api_key: str):
     try:
-        from groq import Groq
+        from google import genai
     except ImportError as e:
         raise RuntimeError(
-            "groq is not installed. Run: pip install groq"
+            "google-genai is not installed. Run: pip install google-genai"
         ) from e
-    return Groq(api_key=api_key)
+    return genai.Client(api_key=api_key)
 
 
 def _generate(prompt: str, api_key: str) -> str:
     client = _get_client(api_key)
     try:
-        resp = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_INSTRUCTIONS},
-                {"role": "user", "content": prompt},
-            ],
+        interaction = client.interactions.create(
+            model=GEMINI_MODEL,
+            system_instruction=SYSTEM_INSTRUCTIONS,
+            input=prompt,
         )
-        return resp.choices[0].message.content
+        return interaction.output_text
     except Exception as e:
         raise RuntimeError(str(e)) from e
 

@@ -53,7 +53,7 @@ additional index inputs.
 ├── build_index.py         # builds sub-indices + composite, runs break tests
 ├── make_charts.py         # the three headline charts (reads output/, writes charts/)
 ├── app.py                 # Streamlit app: live sliders, recomputes in real time
-├── ai_assistant.py        # Groq research assistant: live summary + Q&A, used by app.py
+├── ai_assistant.py        # Gemini research assistant: live summary + Q&A, used by app.py
 ├── data/
 │   ├── raw/                   # prices.csv, fundamentals.csv, indexed_performance.csv,
 │   │                          # market_marketwide.csv, wave1_trends.csv, wave2_trends.csv,
@@ -152,7 +152,7 @@ renders the three headline charts into `charts/`.
 ## Quick start
 
 ```bash
-pip install requests pandas numpy scipy statsmodels ruptures matplotlib pytrends yfinance streamlit groq python-dotenv
+pip install requests pandas numpy scipy statsmodels ruptures matplotlib pytrends yfinance streamlit google-genai python-dotenv
 
 # 1. collect data -> writes data/raw/*.csv, data/processed/*.csv, charts/*.png
 #    (collect_market_data.py's fundamentals.csv feeds build_index.py's Wave 1
@@ -194,10 +194,10 @@ sidebar toggle switches to the same synthetic demo data as `--synthetic`
 elsewhere in this project (clearly labeled — moving sliders changes how the
 data is combined and tested, never which data is loaded).
 
-### AI Research Assistant (Groq)
+### AI Research Assistant (Gemini)
 
 Below the charts, an "AI Research Assistant" section (`ai_assistant.py`) adds
-two Groq-powered features, both grounded in the exact `df`/`breaks` objects
+two Gemini-powered features, both grounded in the exact `df`/`breaks` objects
 `app.py` just recomputed — never a static copy of `VERDICT.md`:
 
 - **Live summary** — regenerates a short executive-summary paragraph that
@@ -214,23 +214,28 @@ with real confidence, Wave 2 findings are flagged as thin/early evidence, and
 "banks absorb the AI wave" is treated as the labeled prediction it is, not a
 finding.
 
-Needs a Groq API key — free, no billing card required, at
-<https://console.groq.com/keys>. Three ways to supply it, in order of
-precedence:
+Needs a Gemini API key — free, no billing card required, from the **"Get API
+key" flow at <https://ai.google.dev>** (AI Studio) specifically. A key issued
+through Google Cloud Console / Vertex AI instead is a different, billed
+product — using one of those is what caused this project's earlier attempt at
+Gemini to require a funded billing account (see below). Three ways to supply
+an AI Studio key, in order of precedence:
 1. **`.env` file (recommended for local dev)** — copy `.env.example` to
-   `.env` and paste your key in as `GROQ_API_KEY=...`. `.env` is gitignored
+   `.env` and paste your key in as `GEMINI_API_KEY=...`. `.env` is gitignored
    and loaded automatically by `app.py` on startup via `python-dotenv`; it
    never gets committed.
-2. **Environment variable** — `export GROQ_API_KEY=...` before launching.
+2. **Environment variable** — `export GEMINI_API_KEY=...` before launching.
 3. **Sidebar input** — paste it into the app at runtime if you'd rather not
    use a file; kept in Streamlit's session memory only, never written to
    disk.
 
-(This originally targeted Gemini; switched to Groq after the available
-Gemini key(s) required a funded Google Cloud billing account before
-unlocking any quota, confirmed across two separate projects. `ai_assistant.py`
-uses the official `groq` Python SDK, an OpenAI-compatible chat-completions
-API.)
+(This originally targeted Gemini, switched to Groq after an earlier Gemini
+key returned quota limit: 0 without a funded Google Cloud billing account,
+then switched back once it became clear that failure was specific to Cloud
+Console/Vertex AI-issued keys rather than Gemini itself. `ai_assistant.py`
+uses the official `google-genai` Python SDK — the current package; the older
+`google-generativeai` package it might be confused with was fully
+deprecated in November 2025.)
 
 If no key is present through any of these, the app still runs normally —
 this section just shows the key prompt instead of the summary/chat tabs.
@@ -261,8 +266,8 @@ for all four collectors' outputs directly, bypassing them entirely.
 exception: both are standalone checks that never flow through
 `build_index.py`, so they each needed their own synthetic path to have any
 offline fallback at all — without it, "the single strongest piece of
-evidence in the whole project" (per `VERDICT.md`) would have no way to be
-demoed without live SEC/Yahoo Finance access.
+evidence in the whole project" (per the Findings section above) would have
+no way to be demoed without live SEC/Yahoo Finance access.
 
 This is opt-in only — it never triggers automatically, and it never touches
 `output/fdi.csv` / `output/break_results.json` / `data/raw/edgar_marketwide.csv`
@@ -284,6 +289,78 @@ is baked in by construction in `synthetic_sources()`,
 - eight chart PNGs in `charts/` — see below
 - (if `--synthetic` was used) matching `output/*_synthetic.*` and
   `charts/*_synthetic.png` files, entirely separate from the real ones above
+
+## Findings
+
+The full evidence behind [VERDICT.md](VERDICT.md)'s verdict, split into the same
+three parts.
+
+### Part 1: Wave 1 fintech has largely lost
+
+**Price evidence** (`charts/indexed_performance.png`, `data/raw/prices.csv`), rebasing each company's stock to 100 at its start date:
+
+| Ticker | Category | Peak (indexed) | Peak date | Value at 2026-07-02 |
+|---|---|---|---|---|
+| XYZ (Block) | embedded finance | **779** | 2021-08-05 | 218 |
+| PYPL (PayPal) | embedded finance | 418 | 2021-07-23 | **62** (below 2018 start) |
+| SOFI | neobank | 264 | 2025-11-12 | 150 |
+| NU (Nubank) | neobank | 182 | 2026-01-28 | 132 |
+| JPM | traditional bank | n/a | steady climb | **389** |
+| BCS (Barclays) | traditional bank | n/a | steady climb | 335 |
+| HSBC | traditional bank | n/a | steady climb | 299 |
+
+The disruptors had a real, dramatic run in 2020-2021: Block up nearly 8x, PayPal over 4x. It didn't hold. PayPal is the only company here to end up below its own starting price five years later. Traditional banks, which barely participated in the 2021 boom, have compounded steadily since 2023-2024 and are now either the best performer (JPM) or fully caught up (BCS, HSBC).
+
+**Profitability evidence** (`data/raw/fundamentals.csv`, now wired into the Wave 1 sub-index as `wave1_profitability`; see `build_index.py`'s `load_profitability()`):
+
+| Ticker | 2022 net income | 2023 net income |
+|---|---|---|
+| SOFI | **-$320M** | -$301M |
+| XYZ (Block) | **-$541M** | +$10M |
+| NU (Nubank) | **-$365M** | +$1,031M |
+| JPM | +$37.7B | +$49.6B |
+| HSBC | +$15.6B | +$23.5B |
+
+2022 was a losing year for these three disruptors, while both banks' profits grew substantially. Quantified as fintech-basket-average YoY growth minus legacy-basket-average YoY growth (a symmetric formula, since several fintech tickers cross from loss to profit and a plain percent change would explode): the fintech basket closed that gap sharply in fiscal 2023-2024 (+0.97, +1.03 on a roughly [-2, 2] scale), then gave it back in fiscal 2025 (-0.06, back to roughly even growth). `yfinance` only exposes ~4 fiscal years per company, so this is 3 annual points, not a monthly series: thin by the same standard applied to the EDGAR and search signals, and why the Wave 1 Chow F-statistics below shifted when this was added.
+
+**Generalization check** (`collect_market_marketwide.py`, `data/raw/market_marketwide.csv`, `charts/market_marketwide.png`) asks Part 2's EDGAR question of the price signal: is "fintech rose then rolled over" a fact about the 7 picked tickers, or the sector? FINX (fintech-sector ETF) relative to KBWB (bank-sector ETF) peaked at **233** (rebased to 100 at 2018) in **September 2020**, then fell to **56** by July 2026, below its 2018 start. The 7-ticker sample peaked at **519** the same month and sits at **73** by July 2026, also below start. Different amplitude, same shape, same turning point, found independently: the "fintech's win didn't hold" story isn't an artifact of which 7 companies got picked.
+
+**What this can't confirm:** whether banks won by copying features or acquiring challengers is plausible but untested here; there's no product-feature or M&A data in this project. Treat that mechanism as outside knowledge, not a finding.
+
+**Structural break confirmation** (`output/break_results.json`, `charts/two_wave_index.png`): the Wave 1 sub-index (now three inputs: price, search, profitability) shows a significant break at **April 2021** (Chow F=17.259, p<0.001), rolling from rising to declining, and a second at **June 2025** (F=4.09, p=0.021), a partial rebound, still significant at 5% but visibly weaker than the price-only version, since profitability is flat through most of 2021 and only moves in 2023-2025. Momentum (`charts/momentum_handoff.png`) is negative for most of 2021-2025: literally losing ground year over year during what this project calls Wave 1's "disruption." Composite FDI now shows both breaks too (F=7.517, p=0.001 at April 2021; F=22.971, p<0.001 at June 2025), where previously only June 2025 cleared threshold: adding profitability strengthened the case for April 2021 as a real break, not just a price artifact.
+
+### Part 2: Wave 2 (AI-native finance) is not yet measurable
+
+This project can't price "is AI-native finance winning" the way it can Wave 1: the companies that would represent that wave are mostly private or too newly public for real stock history. Forcing a market-price answer would mean reading a signal into a handful of thin, noisy tickers that isn't really there. The honest move here is to say so, and treat the thinness of every measurable proxy as evidence the wave is early, not absent.
+
+**SEC filings**, the sharpest signal, thin by design not accident (`data/raw/edgar_mentions.csv`, charted against the market-wide check in `charts/edgar_marketwide.png`). Filings were searched for `"artificial intelligence"` (`ai_broad`, the saturated baseline) and the "AI agent"/"agentic AI" phrase family (`agentic`, Wave-2-specific). By year, summed across all 7 companies:
+
+| Year | `agentic` mentions | `ai_broad` mentions |
+|---|---|---|
+| 2019-2025 | **0 every year** | 1 → 3 → 4 → 5 → 5 → 7 → 7 |
+| 2026 | **5 total** (JPM, HSBC, Barclays, PayPal, Block: one filing each) | 7 |
+
+Seven straight years of zero, then five filings in the latest cycle across seven companies: a real, dated first appearance in a legally binding disclosure, not marketing copy, but still thin enough not to over-read. `ai_broad`, for comparison, is already saturated by 2019, confirming it's a baseline, not a discriminator.
+
+**Checked against the entire market**, not just these 7 (`collect_edgar_marketwide.py`, `data/raw/edgar_marketwide.csv`, `charts/edgar_marketwide.png`): same `agentic` query, form type, and years, but no company filter, across every 10-K filer:
+
+| Year | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 |
+|---|---|---|---|---|---|---|---|---|
+| Market-wide `agentic` filings | 5 | 1 | 0 | 1 | 3 | 6 | **111** | **388** |
+
+This is the single strongest evidence in the project that the thinness is early, not an artifact of a 7-company sample. Market-wide, `agentic` language sits in the low single digits, against tens of thousands of filers, for six straight years, then jumps roughly 18x in 2025 and grows further in 2026: same shape as the 7-company sample, different scale, found independently. It directly answers the obvious objection: no, this isn't just an artifact of which 7 companies got picked.
+
+(Two points needed manual re-verification: the unscoped query is flakier than per-company ones, returning a spurious `0` for `ai_broad` 2026 on first pull, 3640 on retry, consistent with 2025's 3324, and `agentic` 2024 failed its automatic retries and was re-queried by hand to 6. Recorded in `collect_edgar_marketwide.py`'s comments; worth knowing if you re-run this and see a suspicious zero.)
+
+**Search attention:** Wave 2 terms ("AI agent finance", "agentic AI banking", "autonomous wealth management") register literally zero interest every year from 2018 through 2023. Interest turns on in 2024-2025 and reaches ~22 by 2026: real, but from a standing start over two years, still below Wave 1's level.
+
+**No market proxy exists.** Unlike Wave 1, there's no "AI-native fintech" stock basket here, because the relevant companies aren't public. That's not a gap to fix with more tickers; it's the state of the world this verdict describes.
+
+### Part 3: The likely winner is the banks, again, plausible but not proven
+
+The dramatic version of the Wave 2 thesis assumes banks are too encumbered by legacy infrastructure to use AI, leaving room for an AI-native challenger to repeat the Wave 1 playbook. That's not well supported here, and one data point leans the other way: **all five companies whose 2026 filings mention `agentic` language are already-established incumbents: JPM, HSBC, Barclays, PayPal, Block.** None are new AI-native entrants, because none exist in the sample. Neither neobank, SoFi or Nubank, shows `agentic` language even in 2026; the signal sits entirely with traditional banks and older, already-public embedded-finance players, the opposite of what an "AI-native upstart" thesis would predict.
+
+This is **consistent with** incumbents moving first, not **proof of** it. The dataset is public companies only, which structurally excludes any private AI-native challenger moving as fast or faster out of view. Absence of a counter-example in a sample that couldn't contain one either way is weak evidence. What actually tips the prediction toward "banks win again" is mostly outside this codebase: balance-sheet scale, existing compute/data budgets, and the fact that (per Part 1) banks currently have the profits to fund an AI build-out while several Wave 1 challengers were posting losses as recently as 2022-2023.
 
 ## Limitations
 
@@ -314,7 +391,7 @@ is baked in by construction in `synthetic_sources()`,
   underlying gap remains: there is still no way, with any data collected
   here, to see a private AI-native challenger even if one existed and was
   winning right now.
-- **`VERDICT.md` Part 3 (banks likely absorb the AI wave) is a prediction,
+- **Findings Part 3 above (banks likely absorb the AI wave) is a prediction,
   explicitly labeled as such.** It should not be cited with the same
   confidence as the parts that describe what already happened.
 
