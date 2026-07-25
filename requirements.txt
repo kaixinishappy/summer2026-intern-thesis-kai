@@ -1,0 +1,12 @@
+requests
+pandas
+numpy
+scipy
+statsmodels
+ruptures
+matplotlib
+pytrends
+yfinance
+streamlit
+google-genai
+python-dotenv

@@ -1,0 +1,142 @@
+name: Monthly data refresh
+
+# Re-runs the full collection -> build_index.py -> make_charts.py pipeline
+# once a month, on freshly pulled data, and opens a PR with whatever
+# changed. Runs at 04:17 UTC on the 2nd of each month, not the 1st/hour-0 --
+# scheduled workflows queue up around those popular times, sometimes
+# delaying by a while; a slightly offset time avoids that.
+#
+# One-time repo setup required before this can open PRs:
+#   Settings -> Actions -> General -> Workflow permissions ->
+#   "Allow GitHub Actions to create and approve pull requests" (enabled)
+#
+# Known flaky step: collect_trends.py (Google Trends via pytrends). Google
+# aggressively rate-limits/blocks requests from cloud datacenter IP ranges,
+# which is what GitHub-hosted runners use -- this step may fail here even
+# when it works fine on a home connection. It's set to continue-on-error
+# so one flaky source doesn't block the rest of the refresh; the "Verify
+# required collector output exists" step below will fail the whole job
+# loudly if trends data is still missing from a previous run too, rather
+# than silently building an index on stale files.
+#
+# collect_patents.py only runs if a PATENTSVIEW_API_KEY secret is set --
+# PatentsView's key-issuance was paused mid-migration to USPTO's new Open
+# Data Portal as of this writing (see collect_patents.py's docstring), so
+# there may not be a working key yet. Once you have one:
+#   gh secret set PATENTSVIEW_API_KEY --repo kaixinishappy/summer2026-intern-thesis-kai
+
+on:
+  schedule:
+    - cron: "17 4 2 * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: monthly-data-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      PATENTSVIEW_API_KEY: ${{ secrets.PATENTSVIEW_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Collect market data (prices + fundamentals)
+        continue-on-error: true
+        run: python collect_market_data.py
+
+      - name: Collect Google Trends
+        continue-on-error: true
+        run: python collect_trends.py
+
+      - name: Collect SEC EDGAR filings
+        continue-on-error: true
+        run: python collect_edgar.py
+
+      - name: Collect market-wide generalization check (FINX vs KBWB)
+        continue-on-error: true
+        run: python collect_market_marketwide.py
+
+      - name: Collect EDGAR market-wide generalization check
+        continue-on-error: true
+        run: python collect_edgar_marketwide.py
+
+      - name: Collect AI patent filings
+        if: ${{ env.PATENTSVIEW_API_KEY != '' }}
+        continue-on-error: true
+        run: python collect_patents.py
+
+      - name: Verify required collector output exists
+        run: |
+          missing=0
+          for f in data/raw/prices.csv data/raw/fundamentals.csv \
+                   data/raw/wave1_trends.csv data/raw/wave2_trends.csv \
+                   data/raw/edgar_mentions.csv; do
+            if [ ! -f "$f" ]; then
+              echo "MISSING: $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" = "1" ]; then
+            echo "One or more required collector outputs are missing -- a" \
+                 "collector step above failed. Check its log before re-running."
+            exit 1
+          fi
+
+      - name: Build indices + run structural break tests
+        run: python build_index.py
+
+      - name: Generate charts
+        run: python make_charts.py
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit refreshed data to a branch
+        id: commit
+        run: |
+          BRANCH="monthly-data-refresh"
+          git checkout -b "$BRANCH"
+          git add data output charts
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Monthly data refresh: $(date -u +%Y-%m-%d)"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Push branch and open/update PR
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="${{ steps.commit.outputs.branch }}"
+          git push origin "HEAD:$BRANCH" --force
+          PR_BODY=$'Automated monthly refresh via `.github/workflows/monthly-refresh.yml`.\n\nReview the diffs in `data/`, `output/`, and `charts/` before merging -- and check the workflow logs for any collector step that failed or was skipped (most likely `collect_trends.py`, which Google frequently blocks from cloud-runner IPs).'
+          if gh pr view "$BRANCH" >/dev/null 2>&1; then
+            echo "PR already open for $BRANCH -- updated it via force-push."
+            gh pr edit "$BRANCH" --title "Monthly data refresh: $(date -u +%Y-%m-%d)"
+          else
+            gh pr create --base main --head "$BRANCH" \
+              --title "Monthly data refresh: $(date -u +%Y-%m-%d)" \
+              --body "$PR_BODY"
+          fi
+
+      - name: No changes
+        if: steps.commit.outputs.changed == 'false'
+        run: echo "No data changes this run -- nothing to open a PR for."

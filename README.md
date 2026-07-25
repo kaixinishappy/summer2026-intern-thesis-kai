@@ -45,6 +45,8 @@ additional index inputs.
 
 ```
 .
+├── .github/workflows/monthly-refresh.yml # scheduled monthly data refresh -> PR
+├── requirements.txt       # pip dependencies (README Quick start mirrors this)
 ├── collect_market_data.py # data collection: prices, fundamentals, indexed performance
 ├── collect_market_marketwide.py # check: 7-ticker sample vs. FINX/KBWB sector ETFs
 ├── collect_trends.py      # data collection: Google Trends, Wave 1 & 2 keyword groups
@@ -78,13 +80,10 @@ wildly different price levels are comparable on one axis, and writes:
 - `data/raw/indexed_performance.csv` — the rebased-to-100 series
 - `charts/indexed_performance.png`
 
-**`collect_market_marketwide.py`** — extends the 7-ticker price comparison
-with a market-wide baseline: FINX (Global X FinTech ETF) vs. KBWB (Invesco
-KBW Bank ETF), instead of the 7 hand-picked names, to check whether the
-"fintech rose then rolled over vs. banks" shape is real or just an artifact
-of which 7 companies got picked — same spirit as `collect_edgar_marketwide.py`
-below, for the price signal instead of the EDGAR signal. Not fed into
-`build_index.py`'s composite; a standalone generalization check. Writes:
+**`collect_market_marketwide.py`** — checks the price story against a
+market-wide baseline: FINX (fintech-sector ETF) vs. KBWB (bank-sector ETF),
+instead of the 7 hand-picked tickers. Standalone generalization check, not
+fed into the composite. Writes:
 - `data/raw/market_marketwide.csv` — ETF daily close, rebased-to-100
 - `charts/market_marketwide.png` — ETF indexed prices + 7-ticker-sample vs.
   ETF relative-strength overlay
@@ -104,9 +103,8 @@ year since 2019: `"agentic"` (the "AI agent" / "agentic AI" phrase
 family — near-zero until it isn't) and `"ai_broad"` (`"artificial
 intelligence"` — the saturated baseline). Regulatory disclosure carries legal
 weight, unlike a press release, so this is the strongest evidence layer in the
-project. Covers all 7 tickers from the market-price basket (BCS and NU were
-originally left out of this collector despite being valid SEC filers with
-real CIKs — added to close that gap). Writes:
+project. Covers all 7 tickers from the market-price basket, including BCS
+and NU (both 20-F filers). Writes:
 - `data/raw/edgar_mentions.csv` — long format, one row per company/year/query
 
 No chart of its own — see `collect_edgar_marketwide.py` below, which reads
@@ -119,10 +117,7 @@ artifact of which 7 companies got picked. Writes:
 - `data/raw/edgar_marketwide.csv` — year, query, total_filings (market-wide)
 - `charts/edgar_marketwide.png` — 7-company sample vs. market-wide, `agentic` query
 
-Also accepts `--synthetic` (see **Synthetic demo mode** below), like
-`collect_market_marketwide.py` above — both are market-wide/generalization
-checks with no other offline fallback, unlike the primary collectors, which
-`build_index.py --synthetic` fabricates stand-in data for directly.
+Also accepts `--synthetic` (see **Synthetic demo mode** below).
 
 **`build_index.py`** — the combination step. Loads the four collectors'
 real output (raises `FileNotFoundError` if any is missing — no automatic
@@ -174,6 +169,25 @@ python build_index.py
 python make_charts.py
 ```
 
+## Automation
+
+`.github/workflows/monthly-refresh.yml` re-runs the full pipeline above —
+all collectors, `build_index.py`, `make_charts.py` — once a month (matching
+the index's monthly resolution) and opens a pull request with whatever
+changed in `data/`, `output/`, and `charts/`, rather than pushing straight to
+`main`. Can also be run on demand from the Actions tab (`workflow_dispatch`).
+
+Each collector step runs independently, so one flaky source doesn't block
+the rest of the refresh; the workflow then verifies `build_index.py`'s
+required inputs exist before building, and fails loudly if one is missing.
+The most likely failure is `collect_trends.py` — Google frequently
+rate-limits/blocks pytrends requests from the datacenter IP ranges
+GitHub-hosted runners use, even when the same script works fine locally.
+
+One-time setup before this can open PRs: **Settings → Actions → General →
+Workflow permissions → enable "Allow GitHub Actions to create and approve
+pull requests."**
+
 ## Interactive app
 
 ```bash
@@ -217,25 +231,13 @@ finding.
 Needs a Gemini API key — free, no billing card required, from the **"Get API
 key" flow at <https://ai.google.dev>** (AI Studio) specifically. A key issued
 through Google Cloud Console / Vertex AI instead is a different, billed
-product — using one of those is what caused this project's earlier attempt at
-Gemini to require a funded billing account (see below). Three ways to supply
-an AI Studio key, in order of precedence:
-1. **`.env` file (recommended for local dev)** — copy `.env.example` to
-   `.env` and paste your key in as `GEMINI_API_KEY=...`. `.env` is gitignored
-   and loaded automatically by `app.py` on startup via `python-dotenv`; it
-   never gets committed.
+product. Three ways to supply an AI Studio key, in order of precedence:
+1. **`.env` file (recommended for local dev)** — put `GEMINI_API_KEY=...` in
+   this project's gitignored `.env` file, loaded automatically by `app.py`
+   via `python-dotenv`.
 2. **Environment variable** — `export GEMINI_API_KEY=...` before launching.
-3. **Sidebar input** — paste it into the app at runtime if you'd rather not
-   use a file; kept in Streamlit's session memory only, never written to
-   disk.
-
-(This originally targeted Gemini, switched to Groq after an earlier Gemini
-key returned quota limit: 0 without a funded Google Cloud billing account,
-then switched back once it became clear that failure was specific to Cloud
-Console/Vertex AI-issued keys rather than Gemini itself. `ai_assistant.py`
-uses the official `google-genai` Python SDK — the current package; the older
-`google-generativeai` package it might be confused with was fully
-deprecated in November 2025.)
+3. **Sidebar input** — paste it into the app at runtime instead; kept in
+   Streamlit's session memory only, never written to disk.
 
 If no key is present through any of these, the app still runs normally —
 this section just shows the key prompt instead of the summary/chat tabs.
@@ -261,13 +263,10 @@ python collect_market_marketwide.py --synthetic  # writes data/raw/market_market
 
 `collect_market_data.py` and `collect_trends.py` don't need their own
 `--synthetic` flag — `build_index.py --synthetic` fabricates stand-in data
-for all four collectors' outputs directly, bypassing them entirely.
-`collect_edgar_marketwide.py` and `collect_market_marketwide.py` are the
-exception: both are standalone checks that never flow through
-`build_index.py`, so they each needed their own synthetic path to have any
-offline fallback at all — without it, "the single strongest piece of
-evidence in the whole project" (per the Findings section above) would have
-no way to be demoed without live SEC/Yahoo Finance access.
+for all four collectors' outputs directly. `collect_edgar_marketwide.py` and
+`collect_market_marketwide.py` are standalone checks that never flow through
+`build_index.py`, so each needed its own synthetic path for an offline
+fallback.
 
 This is opt-in only — it never triggers automatically, and it never touches
 `output/fdi.csv` / `output/break_results.json` / `data/raw/edgar_marketwide.csv`
@@ -286,7 +285,7 @@ is baked in by construction in `synthetic_sources()`,
 
 - `output/fdi.csv` — monthly sub-indices and composite FDI
 - `output/break_results.json` — detected break dates + Chow F/p per series
-- eight chart PNGs in `charts/` — see below
+- seven chart PNGs in `charts/` — see below
 - (if `--synthetic` was used) matching `output/*_synthetic.*` and
   `charts/*_synthetic.png` files, entirely separate from the real ones above
 
