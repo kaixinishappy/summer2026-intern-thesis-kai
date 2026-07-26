@@ -56,13 +56,14 @@ additional index inputs.
 ├── make_charts.py         # the three headline charts (reads output/, writes charts/)
 ├── app.py                 # Streamlit app: live sliders, recomputes in real time
 ├── ai_assistant.py        # Gemini research assistant: live summary + Q&A, used by app.py
+├── robustness_agent.py    # Gemini tool-calling agent: sweeps parameters to stress-test the breaks
 ├── data/
 │   ├── raw/                   # prices.csv, fundamentals.csv, indexed_performance.csv,
 │   │                          # market_marketwide.csv, wave1_trends.csv, wave2_trends.csv,
 │   │                          # edgar_mentions.csv, edgar_marketwide.csv
 │   └── processed/             # trends_yearly.csv
 ├── charts/                # per-collector charts + the three headline charts (*.png)
-├── output/                # fdi.csv, break_results.json (from build_index.py)
+├── output/                # fdi.csv, break_results.json, robustness_report.md (from build_index.py / robustness_agent.py)
 ├── VERDICT.md             # written verdict
 └── README.md
 ```
@@ -241,6 +242,53 @@ product. Three ways to supply an AI Studio key, in order of precedence:
 
 If no key is present through any of these, the app still runs normally —
 this section just shows the key prompt instead of the summary/chat tabs.
+
+### Robustness agent (Gemini)
+
+Below the AI Research Assistant, a "Robustness agent" section
+(`robustness_agent.py`) adds a genuinely different kind of AI feature: not
+another grounded-summary call, but a multi-step **tool-calling agent** that
+stress-tests this project's own headline structural breaks against the
+choice of parameters that produced them.
+
+It is given exactly one tool, `probe(w1_weight, pelt_penalty,
+momentum_window)` — a thin wrapper around `build_index.py`'s own
+`build_indices()`/`run_break_analysis()`, no separate statistics — and is
+told to: probe the project's own default parameters first (establishing
+what "the headline breaks" are, rather than having break dates hardcoded
+into its prompt), then decide for itself which further parameter
+combinations to test, within the same bounds `app.py`'s sliders already
+enforce (`w1_weight` 0–1, `pelt_penalty` 0.5–10, `momentum_window` 3–24
+months). It stops once it has enough evidence and writes a verdict: which
+breaks are **robust** (survive most reasonable settings), **fragile** (only
+appear at the exact reported parameters), or **parameter-dependent**
+(survive some directions but not others) — citing only the Chow
+F-stat/p-value each probe actually returned, never an invented number.
+
+Click "Run robustness agent" to see the loop happen live: an expander shows
+every probe it chose to run and what it found, followed by its written
+verdict below. This checks robustness of the **statistical method** to
+parameter choice — it is a validity check, not new evidence for or against
+the two-wave thesis, and its own parameter choices can never wander outside
+the sliders' existing ranges.
+
+Uses the same Gemini API key as the assistant above (see setup steps
+above) — no separate key needed. One real constraint worth knowing: Gemini's
+free tier caps `gemini-3.6-flash` at roughly **20 requests per day per
+project** (confirmed empirically via a 429 response's quota detail, not
+documented with an exact number anywhere public), shared across this agent
+and the assistant above. Each agent run costs one request per probe plus a
+final verdict call, so the in-app probe budget slider defaults to a modest
+6 and caps at 8 to leave room for the rest of the day's usage. If the day's
+quota is already spent, the app fails fast with a clear message rather than
+retrying against a wall that won't come down for hours — see
+`robustness_agent.py`'s `_generate_with_retry()` for how it tells a
+transient per-minute rate limit (worth a short retry) apart from a
+per-day quota exhaustion (not worth retrying at all).
+
+Also runnable standalone: `python robustness_agent.py [--synthetic]`
+prints the full probe trace and verdict to the console and writes
+`output/robustness_report.md` (or `_synthetic.md`).
 
 ## Synthetic demo mode
 

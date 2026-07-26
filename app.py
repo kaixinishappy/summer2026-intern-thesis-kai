@@ -43,6 +43,7 @@ import pandas as pd
 import streamlit as st
 
 import ai_assistant
+import robustness_agent
 from build_index import (
     EDGAR_CSV,
     FUNDAMENTALS_CSV,
@@ -405,3 +406,76 @@ else:
                         answer = f"Gemini request failed: {e}"
                 st.markdown(answer)
             st.session_state["ai_chat_history"].append({"role": "assistant", "content": answer})
+
+# ---------------------------------------------------------------------------
+# Robustness agent (Gemini) -- unlike the single-shot assistant above, this
+# is a real multi-step tool-calling agent: it recomputes the index at
+# parameter settings it chooses itself (robustness_agent.probe(), a thin
+# wrapper around build_indices()/run_break_analysis()) to test whether the
+# breaks shown above survive across the sliders' full range, not just the
+# current exact settings. Reuses the api_key resolved above -- no separate
+# key-entry UI.
+# ---------------------------------------------------------------------------
+
+st.subheader(":material/troubleshoot: Robustness agent")
+
+if not api_key:
+    st.caption(
+        "A tool-using agent that stress-tests the breaks above by "
+        "autonomously probing the parameter space. Enter a Gemini API key "
+        "above to enable this."
+    )
+else:
+    st.caption(
+        "This "
+        "runs a genuine plan-call-inspect-decide loop: it recomputes the "
+        "index at w1_weight/pelt_penalty/momentum_window settings it picks "
+        "itself, to check whether each headline break is robust across the "
+        "parameter space or only appears at one exact setting."
+    )
+    max_steps = st.slider(
+        "Probe budget (max tool calls)", 3, 8, robustness_agent.MAX_STEPS_DEFAULT, 1,
+        help="Caps how many times the agent can recompute the index. Gemini's "
+             "free tier caps this model at roughly 20 requests *per day*, "
+             "shared with the AI research assistant above -- keep this small "
+             "so one run doesn't spend most of the day's budget.",
+    )
+    if st.button("Run robustness agent", icon=":material/play_arrow:", type="primary"):
+        with st.spinner(
+            "Agent is probing the parameter space -- this calls Gemini "
+            "repeatedly and may take a minute or two..."
+        ):
+            try:
+                st.session_state["robustness_result"] = robustness_agent.run_agent(
+                    api_key, use_synthetic=res.used_synthetic, max_steps=max_steps,
+                )
+            except Exception as e:
+                st.session_state["robustness_result"] = None
+                st.error(f"Robustness agent failed: {e}")
+
+    result = st.session_state.get("robustness_result")
+    if result:
+        st.caption(
+            f"{result.steps_used}/{result.max_steps} probes used"
+            + (" · **synthetic data**" if result.used_synthetic else "")
+        )
+        with st.expander(f"Probe trace ({len(result.trace)} calls)",
+                         icon=":material/list_alt:"):
+            for i, entry in enumerate(result.trace, 1):
+                p = entry["params"]
+                st.markdown(
+                    f"**Probe {i}** — w1_weight={p.get('w1_weight')}, "
+                    f"pelt_penalty={p.get('pelt_penalty')}, "
+                    f"momentum_window={p.get('momentum_window')}"
+                )
+                if "error" in entry:
+                    st.caption(f"error: {entry['error']}")
+                    continue
+                probe_cols = st.columns(3)
+                for c, series_name, label in zip(
+                    probe_cols, ("wave1", "wave2", "FDI"), ("Wave 1", "Wave 2", "FDI")
+                ):
+                    dates = entry["result"][series_name]["break_dates"]
+                    c.caption(f"{label}: {', '.join(dates) if dates else 'none'}")
+                st.divider()
+        st.markdown(result.verdict)
