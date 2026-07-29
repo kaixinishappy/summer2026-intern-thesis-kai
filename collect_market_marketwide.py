@@ -52,6 +52,20 @@ ETFS = {
     "FINX": "Global X FinTech ETF",
     "KBWB": "Invesco KBW Bank ETF",
 }
+
+# Growth-stock benchmarks for the macro-confound control. The obvious objection
+# to "fintech rose then rolled over ~2021" is that *everything* unprofitable and
+# long-duration sold off in 2022's rate-hike cycle -- so fintech falling proves
+# nothing fintech-specific. FINX/KBWB answers "is it just the 7 tickers"; it does
+# NOT answer "is it just the growth selloff." These two do: QQQ (Nasdaq-100, the
+# broad large-cap growth benchmark) and ARKK (ARK Innovation, the closest analog
+# to unprofitable high-growth disruptors, i.e. the fintechs' own risk bucket). If
+# the fintech basket underperforms even these after 2021, the rollover is
+# fintech-specific, not just the tide going out on all growth stocks.
+GROWTH_BENCHMARKS = {
+    "QQQ": "Invesco QQQ (Nasdaq-100 growth)",
+    "ARKK": "ARK Innovation ETF (disruptive growth)",
+}
 FREQ = "ME"  # month-end, matches build_index.py's resampling frequency
 
 # The same legacy/fintech split collect_market_data.py's TICKERS dict encodes
@@ -208,8 +222,11 @@ if __name__ == "__main__":
         print("=== Fabricating ETF + 7-ticker sample comparison ===")
         etf_prices, sample_ratio, etf_ratio = synthetic_etf_and_sample()
     else:
-        print(f"=== Pulling ETF price history: {list(ETFS)} ===")
-        etf_prices = pull_etf_prices(ETFS)
+        print(f"=== Pulling ETF price history: {list(ETFS) + list(GROWTH_BENCHMARKS)} ===")
+        # Sector ETFs (FINX/KBWB) and growth benchmarks (QQQ/ARKK) are pulled the
+        # same way and stored in the same file; the server filters by ticker for
+        # the two distinct checks (sector generalization vs. macro-confound).
+        etf_prices = pull_etf_prices({**ETFS, **GROWTH_BENCHMARKS})
         etf_ratio = relative_strength(etf_prices, ["FINX"], ["KBWB"])
         if etf_ratio is None:
             raise RuntimeError("Could not build FINX/KBWB relative strength -- check pull above.")

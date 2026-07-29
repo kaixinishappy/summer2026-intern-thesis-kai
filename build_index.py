@@ -19,8 +19,19 @@ Pipeline
                             + fintech-vs-legacy relative profitability growth
      - Wave 2 sub-index  = Wave-2 search interest + EDGAR AI-language intensity
 4. Combine into the composite FDI (weight is configurable -> Streamlit slider later).
-5. Run structural break detection (ruptures / PELT) on the *momentum* of each
-   sub-index, plus a classical Chow test at the detected break for significance.
+5. Detect turning points (ruptures / PELT) in the *momentum* of each sub-index,
+   and score each one for stability: how often the same turning point reappears
+   when the detection parameters (penalty, momentum window) are swept across a
+   grid. A turning point that survives most settings is a real regime change;
+   one that only appears at a single exact setting is fragile.
+
+   (An earlier version ran a classical Chow test at each PELT-detected break and
+   reported an F-stat / p-value. That was dropped: the break date is *estimated*
+   from the same data the Chow test then evaluates -- textbook pre-test bias, so
+   the p-values overstated significance -- and the 12-month momentum transform
+   induces serial correlation that violates the test's iid assumption too. The
+   stability sweep replaces it with something both honest and easier to explain:
+   "this turning point holds no matter how we set the knobs.")
 6. Save output/fdi.csv and output/break_results.json.
 
 Requires the three collector scripts to have already been run -- fails loudly
@@ -48,7 +59,6 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 import ruptures as rpt
-from scipy import stats
 
 # --------------------------------------------------------------------------- #
 # CONFIG  --  the only section you should normally need to touch
@@ -376,52 +386,86 @@ def detect_breaks(series: pd.Series, window: int = MOMENTUM_WINDOW,
             "n_breaks": len(break_dates)}
 
 
-def chow_test(series: pd.Series, break_date: str) -> dict:
-    """Classical Chow test for a structural break in a linear time trend.
+# Grid the stability sweep runs over. Centred on the CONFIG defaults and
+# spanning the same slider ranges a user could pick in the dashboard, so a
+# stability score answers exactly "would a reasonable person setting these
+# knobs differently still see this turning point?" Kept deliberately small
+# (a handful of penalties x windows) because run_break_analysis() re-runs on
+# every slider move -- PELT itself is cheap, but this multiplies it.
+STABILITY_PENALTIES = [2.0, 3.0, 4.0, 5.0, 6.0]
+STABILITY_WINDOWS = [9, 12, 15, 18]
+STABILITY_TOLERANCE_DAYS = 100  # ~3 months: a match doesn't have to be exact
 
-    Regresses value ~ time on the full sample vs. two sub-samples split at
-    break_date, and returns the F-statistic and p-value.
-    """
-    s = series.dropna()
-    t = np.arange(len(s))
-    y = s.values
+
+def turning_direction(series: pd.Series, break_date: str, window: int) -> str:
+    """Plain-language label for what a turning point *is*, for a non-technical
+    reader: did momentum fall across it ('slowdown' -- growth losing steam, the
+    Wave 1 rollover) or rise ('acceleration' -- the Wave 2 inflection)? Computed
+    as the change in mean momentum before vs. at/after the break, so it needs no
+    statistics background to read off the dashboard."""
+    mom = series.diff(window).dropna()
     bd = pd.Timestamp(break_date)
-    split = int((s.index < bd).sum())
-    if split < 3 or (len(s) - split) < 3:
-        return {"break_date": break_date, "note": "too few points to test"}
+    before, after = mom[mom.index < bd], mom[mom.index >= bd]
+    if before.empty or after.empty:
+        return "n/a"
+    return "acceleration" if (after.mean() - before.mean()) > 0 else "slowdown"
 
-    def ssr(tt, yy):
-        X = np.column_stack([np.ones_like(tt), tt])
-        beta, *_ = np.linalg.lstsq(X, yy, rcond=None)
-        resid = yy - X @ beta
-        return float(resid @ resid)
 
-    ssr_pooled = ssr(t, y)
-    ssr1 = ssr(t[:split], y[:split])
-    ssr2 = ssr(t[split:], y[split:])
-    k = 2
-    n = len(s)
-    num = (ssr_pooled - (ssr1 + ssr2)) / k
-    den = (ssr1 + ssr2) / (n - 2 * k)
-    F = num / den if den > 0 else np.nan
-    p = 1 - stats.f.cdf(F, k, n - 2 * k) if np.isfinite(F) else np.nan
-    return {"break_date": break_date, "F_stat": round(float(F), 3),
-            "p_value": round(float(p), 5), "significant_5pct": bool(p < 0.05)}
+def break_stability(series: pd.Series, break_dates: list[str],
+                    penalties: list[float] = STABILITY_PENALTIES,
+                    windows: list[int] = STABILITY_WINDOWS,
+                    tol_days: int = STABILITY_TOLERANCE_DAYS) -> dict[str, dict]:
+    """Replaces the old Chow p-value with something honest and legible: sweep the
+    detection parameters across a grid and, for each headline turning point,
+    report the share of settings that also find a turning point near it (within
+    tol_days). High share = a real regime change that doesn't depend on one exact
+    knob setting; low share = an artefact of the current settings.
+
+    This sidesteps the pre-test bias the Chow test had (it evaluated a break at a
+    date estimated from the same data). Stability makes no distributional
+    assumption at all -- it just measures reproducibility across the settings a
+    user could actually choose."""
+    combos = [(p, w) for p in penalties for w in windows]
+    matched = {bd: 0 for bd in break_dates}
+    for p, w in combos:
+        found = detect_breaks(series, window=w, penalty=p)["break_dates"]
+        found_ts = [pd.Timestamp(d) for d in found]
+        for bd in break_dates:
+            bd_ts = pd.Timestamp(bd)
+            if any(abs((f - bd_ts).days) <= tol_days for f in found_ts):
+                matched[bd] += 1
+    n = len(combos)
+    return {
+        bd: {"n_settings_matched": matched[bd], "n_settings": n,
+             "stability_pct": round(100 * matched[bd] / n, 1) if n else 0.0}
+        for bd in break_dates
+    }
 
 
 def run_break_analysis(res: IndexResult, momentum_window: int = MOMENTUM_WINDOW,
                        pelt_penalty: float = PELT_PENALTY) -> dict:
     """momentum_window/pelt_penalty default to the module CONFIG constants so
-    the CLI (main(), below) is unaffected -- exposed as overrides so app.py's
-    Streamlit sliders can recompute breaks live without touching CONFIG."""
+    the CLI (main(), below) is unaffected -- exposed as overrides so the
+    dashboard sliders can recompute turning points live without touching CONFIG.
+
+    Each detected turning point carries a plain-language direction (slowdown /
+    acceleration) and a stability_pct (share of the STABILITY grid that also
+    finds it) -- the two numbers the dashboard shows in place of the old Chow
+    F-stat / p-value."""
     df = res.df
     out = {"used_synthetic": res.used_synthetic, "weight_w1": res.weight_w1, "series": {}}
     for col in ("wave1", "wave2", "FDI"):
         det = detect_breaks(df[col], window=momentum_window, penalty=pelt_penalty)
-        chow = [chow_test(df[col], bd) for bd in det["break_dates"]]
+        stab = break_stability(df[col], det["break_dates"])
+        turning_points = [
+            {"break_date": bd,
+             "direction": turning_direction(df[col], bd, momentum_window),
+             **stab[bd]}
+            for bd in det["break_dates"]
+        ]
         out["series"][col] = {"break_dates": det["break_dates"],
                               "n_breaks": det["n_breaks"],
-                              "chow_tests": chow}
+                              "turning_points": turning_points}
     return out
 
 
@@ -462,11 +506,11 @@ def main():
     for col in ("wave1", "wave2", "FDI"):
         s = breaks["series"][col]
         print(f"  {col:6s} breaks: {s['break_dates'] or 'none'}")
-        for ct in s["chow_tests"]:
-            if "F_stat" in ct:
-                sig = "**" if ct["significant_5pct"] else "  "
-                print(f"          Chow @ {ct['break_date']}: "
-                      f"F={ct['F_stat']}, p={ct['p_value']} {sig}")
+        for tp in s["turning_points"]:
+            robust = "**" if tp["stability_pct"] >= 70 else "  "
+            print(f"          {tp['break_date']}: {tp['direction']}, "
+                  f"stable across {tp['stability_pct']}% of settings "
+                  f"({tp['n_settings_matched']}/{tp['n_settings']}) {robust}")
     print("-" * 66)
     print(f"  Saved: {fdi_path}")
     print(f"  Saved: {breaks_path}")

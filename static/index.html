@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fintech Two-Wave Disruption Index</title>
+<link rel="stylesheet" href="/assets/css/style.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-title">
+    <h1>Fintech Two-Wave Disruption Index</h1>
+    <span id="data-badge" class="badge badge-muted">loading…</span>
+  </div>
+  <button id="theme-toggle" class="icon-btn" title="Toggle light/dark" aria-label="Toggle theme">◐</button>
+</header>
+
+<div class="layout">
+
+  <aside class="sidebar">
+    <h2>Parameters</h2>
+
+    <label class="control">
+      <span class="control-label">Wave 1 weight in composite FDI <b id="w1_weight_val">0.50</b></span>
+      <input type="range" id="w1_weight" min="0" max="1" step="0.05" value="0.5">
+      <span class="control-hint">FDI = weight × Wave1 + (1 − weight) × Wave2</span>
+    </label>
+
+    <label class="control">
+      <span class="control-label">PELT penalty <b id="pelt_penalty_val">3.0</b></span>
+      <input type="range" id="pelt_penalty" min="0.5" max="10" step="0.5" value="3.0">
+      <span class="control-hint">Higher = fewer, more conservative breaks</span>
+    </label>
+
+    <label class="control">
+      <span class="control-label">Momentum window (months) <b id="momentum_window_val">12</b></span>
+      <input type="range" id="momentum_window" min="3" max="24" step="1" value="12">
+      <span class="control-hint">Breaks are detected on this trailing window's rate of change</span>
+    </label>
+
+    <label class="control control-checkbox">
+      <input type="checkbox" id="use_synthetic">
+      <span>Use synthetic demo data</span>
+    </label>
+    <p class="control-hint" id="synthetic-hint"></p>
+
+    <details class="ai-key-details">
+      <summary>Gemini API key</summary>
+      <input type="password" id="gemini_api_key" placeholder="AI Studio key (ai.google.dev)">
+      <p class="control-hint">Only used in this browser session, never sent anywhere but this server. Needed for the AI assistant and robustness agent.</p>
+    </details>
+  </aside>
+
+  <main class="content">
+
+    <nav class="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="data-collection" role="tab">1 · Data Collection</button>
+      <button class="tab-btn" data-tab="index-construction" role="tab">2 · Index Construction</button>
+      <button class="tab-btn" data-tab="structural-breaks" role="tab">3 · Turning Points</button>
+      <button class="tab-btn" data-tab="robustness" role="tab">4 · Robustness Checks</button>
+      <button class="tab-btn" data-tab="convergence" role="tab">5 · Converging Evidence</button>
+      <button class="tab-btn" data-tab="verdict" role="tab">6 · Verdict &amp; AI Assistant</button>
+    </nav>
+
+    <section id="tab-data-collection" class="tab-panel active">
+      <p class="tab-intro">The four independent sources collected and combined into the index below. Real collector output, not backtested against the thesis.</p>
+
+      <div class="card">
+        <h3>Indexed price performance <span class="muted">(rebased to 100 at each ticker's start date)</span></h3>
+        <div id="chart-indexed-performance" class="chart"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3>Search interest <span class="muted">(Google Trends, yearly average)</span></h3>
+          <div id="chart-trends" class="chart"></div>
+        </div>
+        <div class="card">
+          <h3>SEC filing mentions <span class="muted">(EDGAR, 7-company sample, yearly)</span></h3>
+          <div id="chart-edgar-yearly" class="chart"></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3>2026 filings mentioning "agentic" language</h3>
+          <div id="table-edgar-2026" class="table-wrap"></div>
+        </div>
+        <div class="card">
+          <h3>Annual net income <span class="muted">($, by ticker)</span></h3>
+          <div id="table-fundamentals" class="table-wrap"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Revenue-share proxy <span class="muted">(fintech share of the fintech + bank revenue pool)</span></h3>
+        <p class="tab-intro">The thesis question is about <b>market share</b>. Stock price only stands in for that — a stock can fall while the business keeps growing. Revenue is a closer proxy: does fintech keep taking a bigger slice of the combined revenue pool, or has its share plateaued? (yfinance exposes ~4 fiscal years, so this is a recent snapshot, not a long history.)</p>
+        <div id="chart-revenue-share" class="chart"></div>
+      </div>
+    </section>
+
+    <section id="tab-index-construction" class="tab-panel">
+      <p class="tab-intro">Wave 1 (payments / neobanks / embedded finance) and Wave 2 (AI-native finance) sub-indices, combined into the composite FDI. Adjust the parameters in the sidebar — this recomputes live.</p>
+      <div class="card">
+        <h3>The Two Waves of Fintech Disruption</h3>
+        <div id="chart-two-wave" class="chart chart-tall"></div>
+      </div>
+      <div class="card">
+        <h3>Momentum handoff <span class="muted">(trailing change in each sub-index)</span></h3>
+        <div id="chart-momentum" class="chart chart-tall"></div>
+      </div>
+    </section>
+
+    <section id="tab-structural-breaks" class="tab-panel">
+      <p class="tab-intro">Where did each sub-index's momentum change regime? PELT change-point detection flags the turning points; each one is then scored for <b>stability</b> — the share of parameter settings (penalty × momentum window) that also find it. A turning point that survives most settings is a real regime change; one that only appears at one exact setting is fragile. (This replaces the earlier Chow test, whose p-values were biased because the break date was estimated from the same data — see the README note.)</p>
+      <div class="stat-row" id="break-stats"></div>
+      <div class="card">
+        <h3>Detected turning points &amp; stability</h3>
+        <div id="table-breaks" class="table-wrap"></div>
+      </div>
+      <div class="card">
+        <h3>Are incumbents responding? <span class="muted">(market pressure vs. AI language in filings)</span></h3>
+        <div id="chart-incumbent-top" class="chart"></div>
+        <div id="chart-incumbent-bottom" class="chart"></div>
+      </div>
+    </section>
+
+    <section id="tab-robustness" class="tab-panel">
+      <p class="tab-intro">Two standalone generalization checks, plus a Gemini agent that stress-tests the headline breaks against the choice of parameters.</p>
+
+      <div class="card">
+        <h3>Fintech vs. bank sector ETFs <span class="muted">(does the 7-ticker sample generalize?)</span></h3>
+        <div id="chart-mw-etf" class="chart"></div>
+        <div id="chart-mw-ratio" class="chart"></div>
+      </div>
+
+      <div class="card">
+        <h3>"Agentic AI" language in SEC 10-K filings <span class="muted">(7-company sample vs. entire market)</span></h3>
+        <div id="chart-edgar-mw-top" class="chart"></div>
+        <div id="chart-edgar-mw-bottom" class="chart"></div>
+      </div>
+
+      <div class="card">
+        <h3>Macro-confound control <span class="muted">(fintech vs. growth benchmarks, not just banks)</span></h3>
+        <p class="tab-intro">The obvious objection to "fintech rolled over ~2021" is that <i>every</i> unprofitable growth stock sold off in 2022's rate-hike cycle — so this may say nothing fintech-specific. This checks it: the fintech basket's strength relative to <b>QQQ</b> (broad Nasdaq-100 growth) and <b>ARKK</b> (speculative disruptive growth). If fintech underperforms even these, the decline is fintech-specific, not just the growth-stock tide going out.</p>
+        <div id="chart-macro-control" class="chart chart-tall"></div>
+      </div>
+
+      <div class="card">
+        <h3>Robustness agent <span class="muted">(Gemini tool-calling loop)</span></h3>
+        <p class="tab-intro">Recomputes the index at parameter settings it chooses itself, to check whether each headline break survives across the parameter space or only appears at one exact setting.</p>
+        <label class="control">
+          <span class="control-label">Probe budget (max tool calls) <b id="probe_budget_val">6</b></span>
+          <input type="range" id="probe_budget" min="3" max="8" step="1" value="6">
+        </label>
+        <button id="run-robustness" class="btn btn-primary">Run robustness agent</button>
+        <div id="robustness-status" class="status-line"></div>
+        <div id="robustness-result"></div>
+      </div>
+    </section>
+
+    <section id="tab-convergence" class="tab-panel">
+      <p class="tab-intro">The whole argument in one view. Each independent signal is put on the same scale (z-scored, smoothed to show the trend, not the noise). The case for the two-wave story isn't any single statistic — it's that <b>unrelated datasets agree</b>: the market and profitability signals peak and roll over together around 2021, while the AI-language and AI-search signals inflect upward together around 2024. Wave 1 signals are shown in warm colours, Wave 2 in cool.</p>
+
+      <div class="card">
+        <h3>Every signal on one scale <span class="muted">(z-scored, 6-month smoothed)</span></h3>
+        <div id="chart-convergence" class="chart chart-tall"></div>
+        <p class="control-hint" id="convergence-caption"></p>
+      </div>
+
+      <div class="card">
+        <h3>When each signal peaks</h3>
+        <p class="tab-intro">Read down the two groups: Wave 1's market/profitability signals top out early; Wave 2's AI signals top out late. (Wave 1 search interest is the honest exception — "mobile banking" and the like kept climbing as the category went mainstream, even as the <i>competitive</i> edge faded.)</p>
+        <div id="table-convergence" class="table-wrap"></div>
+      </div>
+    </section>
+
+    <section id="tab-verdict" class="tab-panel">
+      <div class="stat-row" id="overview-stats"></div>
+
+      <div class="card">
+        <h3>Written verdict</h3>
+        <div id="verdict-md" class="markdown-body"></div>
+      </div>
+
+      <div class="card">
+        <h3>Detailed findings <span class="muted">(README.md)</span></h3>
+        <div id="findings-md" class="markdown-body"></div>
+      </div>
+
+      <div class="card">
+        <h3>AI research assistant <span class="muted">(Gemini)</span></h3>
+        <p class="tab-intro">Grounded in the exact numbers computed in the Index Construction / Structural Breaks tabs at whatever the sidebar is currently set to.</p>
+        <div class="ai-tabs">
+          <button class="ai-tab-btn active" data-ai-tab="summary">Live summary</button>
+          <button class="ai-tab-btn" data-ai-tab="chat">Ask a question</button>
+        </div>
+        <div id="ai-summary" class="ai-panel active">
+          <button id="gen-summary" class="btn btn-primary">Generate summary</button>
+          <div id="ai-summary-output" class="markdown-body"></div>
+        </div>
+        <div id="ai-chat" class="ai-panel">
+          <div id="chat-history" class="chat-history"></div>
+          <form id="chat-form" class="chat-form">
+            <input type="text" id="chat-input" placeholder="Ask about the findings…" autocomplete="off">
+            <button type="submit" class="btn btn-primary">Send</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="/assets/js/api.js"></script>
+<script src="/assets/js/charts.js"></script>
+<script src="/assets/js/app.js"></script>
+</body>
+</html>

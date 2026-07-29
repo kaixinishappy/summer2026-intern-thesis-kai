@@ -94,7 +94,21 @@ def pull_prices(ticker_groups: dict, start: str = START_DATE) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def pull_fundamentals(ticker_groups: dict) -> pd.DataFrame:
-    """Pulls annual net income from each company's income statement."""
+    """Pulls annual net income AND total revenue from each company's income
+    statement.
+
+    Revenue is the market-share proxy the thesis question ("taken significant
+    market share") actually calls for -- stock price, the previous headline
+    signal, moves on sentiment/rates and can fall while a company keeps winning
+    business. Revenue is closer to "how much of the combined pool of business
+    each side commands", so build_index.py / the dashboard can compute fintech's
+    share of the (fintech + legacy) revenue pool over time and watch whether it
+    kept climbing or plateaued. yfinance only exposes ~4 fiscal years, so this is
+    a recent-snapshot proxy, not a long history -- flagged as such wherever shown.
+
+    Banks label the top line "Total Revenue" (some also carry "Operating
+    Revenue"); we prefer Total Revenue and fall back to Operating Revenue so a
+    missing exact label doesn't silently drop a company."""
     rows = []
     for category, tickers in ticker_groups.items():
         for symbol, display_name in tickers.items():
@@ -105,13 +119,19 @@ def pull_fundamentals(ticker_groups: dict) -> pd.DataFrame:
                     print(f"  WARNING: no net income data for {symbol}")
                     continue
                 net_income = fin.loc["Net Income"]
+                revenue_row = next((fin.loc[k] for k in ("Total Revenue", "Operating Revenue")
+                                    if k in fin.index), None)
+                if revenue_row is None:
+                    print(f"  WARNING: no revenue line for {symbol}, revenue left blank")
                 for year, value in net_income.items():
+                    rev = revenue_row.get(year) if revenue_row is not None else None
                     rows.append({
                         "ticker": symbol,
                         "name": display_name,
                         "category": category,
                         "fiscal_year": pd.to_datetime(year).year,
                         "net_income": value,
+                        "revenue": rev,
                     })
             except Exception as e:
                 print(f"  ERROR pulling fundamentals for {symbol}: {e}")

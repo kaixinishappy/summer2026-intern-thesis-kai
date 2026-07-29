@@ -5,7 +5,7 @@ course, or whether a **second wave of AI-native financial services** is only now
 beginning.
 
 Rather than asking the trivial question ("did fintech disrupt banking?" — yes),
-this project tests for **two separate structural breaks**: the maturation of
+this project looks for **two separate turning points**: the maturation of
 Wave 1 (payments, neobanks, embedded finance) and the onset of Wave 2 (AI-native
 underwriting and advisory).
 
@@ -26,20 +26,32 @@ and combined into a **Fintech Disruption Index (FDI)** with two sub-indices:
 - **Wave 2 sub-index** = Wave-2 search interest + EDGAR AI intensity
 - **Composite FDI** = weighted blend (weight configurable)
 
-Structural breaks are detected on each sub-index's **12-month momentum** using
-PELT (`ruptures`), then confirmed with a classical **Chow test** for a break in
-the linear trend. Each sub-index is re-standardised to unit variance after
-averaging its inputs, so PELT's penalty means the same thing regardless of how
-many raw signals feed a given wave (Wave 1 now averages three, Wave 2 still
-averages two).
+Turning points are detected on each sub-index's **12-month momentum** using
+PELT (`ruptures`). Instead of attaching a p-value to each one, every turning
+point is scored for **stability**: the share of a parameter grid (penalty ×
+momentum window) that also finds it. A turning point that survives most settings
+is a real regime change; one that only appears at a single exact setting is
+fragile. Each sub-index is re-standardised to unit variance after averaging its
+inputs, so PELT's penalty means the same thing regardless of how many raw signals
+feed a given wave (Wave 1 now averages three, Wave 2 still averages two).
 
-Two standalone checks, mirroring each other, ask whether the headline
-7-ticker/7-company findings generalize beyond that hand-picked sample:
+> **Why not a Chow test?** An earlier version ran a classical Chow test at each
+> PELT-detected break and reported an F-stat / p-value. That was dropped: the
+> break date is *estimated* from the same data the Chow test then evaluates
+> (textbook pre-test bias, so the p-values overstated significance), and the
+> 12-month momentum transform induces serial correlation that violates the test's
+> iid assumption. The stability sweep needs no distributional assumption and is
+> easier to defend to a non-technical audience — "this turning point holds no
+> matter how we set the knobs" beats "F = 17.3."
+
+Three standalone checks ask whether the headline findings survive beyond the
+hand-picked sample and the specific method:
 `collect_edgar_marketwide.py` reruns the EDGAR "agentic" query with no company
-filter across every SEC 10-K filer, and `collect_market_marketwide.py` compares
-a fintech-sector ETF (FINX) against a bank-sector ETF (KBWB) instead of the 7
-tickers. Neither feeds into the composite FDI — they're validation charts, not
-additional index inputs.
+filter across every SEC 10-K filer; `collect_market_marketwide.py` compares a
+fintech-sector ETF (FINX) against a bank-sector ETF (KBWB) instead of the 7
+tickers, **and** benchmarks the fintech basket against growth ETFs (QQQ, ARKK) to
+separate a fintech-specific decline from the 2022 growth-stock selloff. None feed
+into the composite FDI — they're validation charts, not additional index inputs.
 
 ## Repository layout
 
@@ -138,9 +150,10 @@ outside 2023-2025 rather than shrinking the whole index's date range down to
 that window (see `load_profitability()`'s docstring for the exact mechanism).
 
 Then runs PELT change-point detection (`ruptures`) on each series' 12-month
-momentum to find candidate break dates, and a Chow test at each candidate to
-confirm it's a statistically significant break in trend (not just noise).
-Writes `output/fdi.csv` and `output/break_results.json`.
+momentum to find turning points, labels each one's direction (slowdown /
+acceleration), and scores it for stability by re-running detection across a grid
+of penalties and momentum windows (what fraction of settings find the same
+turning point). Writes `output/fdi.csv` and `output/break_results.json`.
 
 **`make_charts.py`** — reads `output/fdi.csv` + `break_results.json` and
 renders the three headline charts into `charts/`.
@@ -189,37 +202,53 @@ One-time setup before this can open PRs: **Settings → Actions → General →
 Workflow permissions → enable "Allow GitHub Actions to create and approve
 pull requests."**
 
-## Interactive app
+## Interactive dashboard
 
 ```bash
-streamlit run app.py
+pip install -r requirements.txt
+uvicorn server:app --reload
+# open http://127.0.0.1:8000
 ```
 
-`app.py` is a live version of steps 2-3 above: sliders for the composite
-weight (`W1_WEIGHT`), PELT break-detection penalty, and momentum window
-recompute the sub-indices, break dates, and Chow tests on every change —
-Streamlit reruns the script top-to-bottom on each interaction, so there's no
-separate "rebuild" step. It imports `build_indices()` and
-`run_break_analysis()` straight from `build_index.py` (which now accepts
-`momentum_window`/`pelt_penalty` overrides for this purpose, defaulting to
-the same `CONFIG` constants the CLI uses) and reuses `make_charts.py`'s
-color palette and break-annotation helper, so the live charts can't drift
-from the static PNGs' numbers or styling. If `data/raw/*.csv` is missing, a
-sidebar toggle switches to the same synthetic demo data as `--synthetic`
-elsewhere in this project (clearly labeled — moving sliders changes how the
-data is combined and tested, never which data is loaded).
+The dashboard is a small **FastAPI backend** (`server.py`) serving a plain
+**HTML/JS/Plotly frontend** (`static/`). Every chart is drawn in the browser
+from real numbers returned as JSON — nothing is shipped as a PNG. It is
+organised as the project's stages, left to right:
+
+1. **Data Collection** — the four raw sources, plus the revenue-share
+   market-share proxy.
+2. **Index Construction** — Wave 1 / Wave 2 sub-indices and the composite FDI,
+   recomputed live from sidebar sliders (`W1_WEIGHT`, PELT penalty, momentum
+   window).
+3. **Turning Points** — PELT-detected turning points, each with a direction
+   (slowdown / acceleration) and a stability score.
+4. **Robustness Checks** — the sector-ETF and market-wide EDGAR generalization
+   checks, the growth-benchmark macro-confound control, and the Gemini
+   robustness agent.
+5. **Converging Evidence** — every signal on one z-scored, smoothed scale, so
+   the reader can see the independent sources agree on the two turning points.
+6. **Verdict & AI Assistant** — `VERDICT.md` + README findings, plus the Gemini
+   summary and Q&A.
+
+The endpoints import `build_indices()` and `run_break_analysis()` straight from
+`build_index.py` (which accepts `momentum_window`/`pelt_penalty` overrides,
+defaulting to the same `CONFIG` constants the CLI uses), so the live numbers
+can never drift from the pipeline. If `data/raw/*.csv` is missing, a sidebar
+toggle switches to the same synthetic demo data as `--synthetic` elsewhere
+(clearly labeled — moving sliders changes how the data is combined and tested,
+never which data is loaded).
 
 ### AI Research Assistant (Gemini)
 
 Below the charts, an "AI Research Assistant" section (`ai_assistant.py`) adds
 two Gemini-powered features, both grounded in the exact `df`/`breaks` objects
-`app.py` just recomputed — never a static copy of `VERDICT.md`:
+the server just recomputed — never a static copy of `VERDICT.md`:
 
 - **Live summary** — regenerates a short executive-summary paragraph that
   reflects whatever the sliders are *currently* set to, so you can compare it
   against `VERDICT.md`'s written verdict at the default 50/50 weight.
 - **Ask a question** — a chat interface for questions about the current run
-  (break dates, F-statistics, what a limitation means, etc.).
+  (turning-point dates, stability scores, what a limitation means, etc.).
 
 Every call rebuilds its context fresh from the live numbers and is instructed
 to only cite figures present in that context — it can't invent a statistic or
@@ -234,11 +263,11 @@ key" flow at <https://ai.google.dev>** (AI Studio) specifically. A key issued
 through Google Cloud Console / Vertex AI instead is a different, billed
 product. Three ways to supply an AI Studio key, in order of precedence:
 1. **`.env` file (recommended for local dev)** — put `GEMINI_API_KEY=...` in
-   this project's gitignored `.env` file, loaded automatically by `app.py`
+   this project's gitignored `.env` file, loaded automatically by `server.py`
    via `python-dotenv`.
 2. **Environment variable** — `export GEMINI_API_KEY=...` before launching.
-3. **Sidebar input** — paste it into the app at runtime instead; kept in
-   Streamlit's session memory only, never written to disk.
+3. **Sidebar input** — paste it into the dashboard at runtime instead; kept in
+   the browser's memory only and sent per-request, never written to disk.
 
 If no key is present through any of these, the app still runs normally —
 this section just shows the key prompt instead of the summary/chat tabs.
@@ -262,8 +291,10 @@ enforce (`w1_weight` 0–1, `pelt_penalty` 0.5–10, `momentum_window` 3–24
 months). It stops once it has enough evidence and writes a verdict: which
 breaks are **robust** (survive most reasonable settings), **fragile** (only
 appear at the exact reported parameters), or **parameter-dependent**
-(survive some directions but not others) — citing only the Chow
-F-stat/p-value each probe actually returned, never an invented number.
+(survive some directions but not others) — citing only the turning-point
+dates, directions, and stability scores each probe actually returned, never an
+invented number. (This is the qualitative, LLM-driven companion to the
+deterministic stability score `build_index.py` already computes.)
 
 Click "Run robustness agent" to see the loop happen live: an expander shows
 every probe it chose to run and what it found, followed by its written
@@ -332,7 +363,7 @@ is baked in by construction in `synthetic_sources()`,
 ## Outputs
 
 - `output/fdi.csv` — monthly sub-indices and composite FDI
-- `output/break_results.json` — detected break dates + Chow F/p per series
+- `output/break_results.json` — detected turning points + direction + stability score per series
 - seven chart PNGs in `charts/` — see below
 - (if `--synthetic` was used) matching `output/*_synthetic.*` and
   `charts/*_synthetic.png` files, entirely separate from the real ones above
@@ -368,13 +399,17 @@ The disruptors had a real, dramatic run in 2020-2021: Block up nearly 8x, PayPal
 | JPM | +$37.7B | +$49.6B |
 | HSBC | +$15.6B | +$23.5B |
 
-2022 was a losing year for these three disruptors, while both banks' profits grew substantially. Quantified as fintech-basket-average YoY growth minus legacy-basket-average YoY growth (a symmetric formula, since several fintech tickers cross from loss to profit and a plain percent change would explode): the fintech basket closed that gap sharply in fiscal 2023-2024 (+0.97, +1.03 on a roughly [-2, 2] scale), then gave it back in fiscal 2025 (-0.06, back to roughly even growth). `yfinance` only exposes ~4 fiscal years per company, so this is 3 annual points, not a monthly series: thin by the same standard applied to the EDGAR and search signals, and why the Wave 1 Chow F-statistics below shifted when this was added.
+2022 was a losing year for these three disruptors, while both banks' profits grew substantially. Quantified as fintech-basket-average YoY growth minus legacy-basket-average YoY growth (a symmetric formula, since several fintech tickers cross from loss to profit and a plain percent change would explode): the fintech basket closed that gap sharply in fiscal 2023-2024 (+0.97, +1.03 on a roughly [-2, 2] scale), then gave it back in fiscal 2025 (-0.06, back to roughly even growth). `yfinance` only exposes ~4 fiscal years per company, so this is 3 annual points, not a monthly series: thin by the same standard applied to the EDGAR and search signals.
+
+**Market-share proxy** (`data/raw/fundamentals.csv` revenue column, Data Collection tab): the thesis question is literally about *market share*, which stock price only proxies (a stock can fall while the business keeps growing). Fintech's share of the combined (fintech + legacy) **revenue** pool went **19.4% (2022) → 19.5% → 20.3% → 20.3% (2025)** — essentially flat. Even as the fintechs returned to profit, they stopped taking ground: consistent with "Wave 1 has matured", and a more direct read on the thesis than price. Thin by construction (yfinance exposes ~4 fiscal years), so it's a recent snapshot, not a long history.
 
 **Generalization check** (`collect_market_marketwide.py`, `data/raw/market_marketwide.csv`, `charts/market_marketwide.png`) asks Part 2's EDGAR question of the price signal: is "fintech rose then rolled over" a fact about the 7 picked tickers, or the sector? FINX (fintech-sector ETF) relative to KBWB (bank-sector ETF) peaked at **233** (rebased to 100 at 2018) in **September 2020**, then fell to **56** by July 2026, below its 2018 start. The 7-ticker sample peaked at **519** the same month and sits at **73** by July 2026, also below start. Different amplitude, same shape, same turning point, found independently: the "fintech's win didn't hold" story isn't an artifact of which 7 companies got picked.
 
+**Macro-confound control** (`collect_market_marketwide.py`, QQQ/ARKK, Robustness tab): the obvious objection to "fintech rolled over ~2021" is that *every* unprofitable growth stock sold off in 2022's rate-hike cycle. The FINX/KBWB check above rules out "just the 7 tickers"; this rules out "just the growth selloff." Benchmarked against **QQQ** (Nasdaq-100 growth), the fintech basket peaked at **205** (Dec 2020) and fell to **63** by July 2026 — it underperformed even the broad growth market by ~37% over the period, so the decline is fintech-specific, not the whole growth tide going out. The one honest nuance: against **ARKK** (the most speculative disruptive-growth basket) fintech held up (ending ~142), i.e. it beat the *riskiest* growth bucket while losing to the mainstream one.
+
 **What this can't confirm:** whether banks won by copying features or acquiring challengers is plausible but untested here; there's no product-feature or M&A data in this project. Treat that mechanism as outside knowledge, not a finding.
 
-**Structural break confirmation** (`output/break_results.json`, `charts/two_wave_index.png`): the Wave 1 sub-index (now three inputs: price, search, profitability) shows a significant break at **April 2021** (Chow F=17.259, p<0.001), rolling from rising to declining, and a second at **June 2025** (F=4.09, p=0.021), a partial rebound, still significant at 5% but visibly weaker than the price-only version, since profitability is flat through most of 2021 and only moves in 2023-2025. Momentum (`charts/momentum_handoff.png`) is negative for most of 2021-2025: literally losing ground year over year during what this project calls Wave 1's "disruption." Composite FDI now shows both breaks too (F=7.517, p=0.001 at April 2021; F=22.971, p<0.001 at June 2025), where previously only June 2025 cleared threshold: adding profitability strengthened the case for April 2021 as a real break, not just a price artifact.
+**Turning-point confirmation** (`output/break_results.json`, `charts/two_wave_index.png`): the Wave 1 sub-index (three inputs: price, search, profitability) has a turning point at **April 2021** — a **slowdown**, momentum rolling from rising to declining — that is **robust**, reappearing under **75% (15/20)** of penalty × momentum-window settings. A second at **June 2025** (an **acceleration**, partial rebound) is nearly as stable at **70% (14/20)**. Momentum (`charts/momentum_handoff.png`) is negative for most of 2021-2025: literally losing ground year over year during what this project calls Wave 1's "disruption." The composite FDI shows the same June 2025 acceleration robustly (**75%**), but its April 2021 slowdown is **fragile** (only **35%, 7/20**) — an honest caveat: blending the waves *weakens* the 2021 signal that is strong in Wave 1 alone, which is exactly why the project keeps the sub-indices separate rather than reading the composite. (This replaces an earlier Chow test whose p-values were biased by estimating the break date from the same data — see the "Why not a Chow test?" note above.)
 
 ### Part 2: Wave 2 (AI-native finance) is not yet measurable
 

@@ -4,7 +4,7 @@
 
 ## Verdict
 
-The **first wave of fintech** has largely run its course. Between 2010 and 2021, payment platforms, neobanks, and challengers like PayPal, Block, and Robinhood won on user experience, not a fundamentally different banking model. Many turned unprofitable after 2021 while rising rates strengthened bank earnings, and traditional institutions have since reclaimed the pricing power and market position fintech briefly took. This is backed by price and profitability data across multiple years, and corroborated by a broader fintech-sector-ETF-vs-bank-sector-ETF check showing the same rise-and-rollover shape beyond the 7 tickers picked here.
+The **first wave of fintech** has largely run its course. Between 2010 and 2021, payment platforms, neobanks, and challengers like PayPal, Block, and Robinhood won on user experience, not a fundamentally different banking model. Many turned unprofitable after 2021 while rising rates strengthened bank earnings, and traditional institutions have since reclaimed the pricing power and market position fintech briefly took. This is backed by price and profitability data across multiple years, and by three converging robustness checks: fintech's share of the combined revenue pool stayed essentially flat (~19% → 20%, 2022-2025) even as the challengers returned to profit — a direct market-share read, not just a stock-price proxy; the fintech basket underperformed even the broad Nasdaq-100 growth benchmark (QQQ), so the decline is fintech-specific rather than the 2022 growth-stock selloff; and a fintech-sector-ETF-vs-bank-sector-ETF check shows the same rise-and-rollover shape beyond the 7 tickers picked here.
 
 The **second wave, AI-native finance**, can't be evaluated with the same confidence. Most AI-first firms are private or too newly public for meaningful data, so there's no way yet to tell lasting advantage from early hype. Search interest and AI-related filings show only modest upticks starting 2024. That thinness is itself the finding: too early to call, not absent.
 
@@ -14,10 +14,10 @@ The project's main empirical contribution is separating these two waves rather t
 
 ---
 
-*For the full evidence behind this verdict — price and profitability tables,
-structural break statistics, EDGAR filing counts, and the market-wide/sector-ETF
-generalization checks — see [README.md's Findings section](README.md#findings),
-Parts 1-3.*
+*For the full evidence behind this verdict — price, profitability and
+revenue-share tables, turning-point stability scores, EDGAR filing counts, and
+the market-wide / sector-ETF / growth-benchmark generalization checks — see
+[README.md's Findings section](README.md#findings), Parts 1-3.*
 
 ## Bottom line
 

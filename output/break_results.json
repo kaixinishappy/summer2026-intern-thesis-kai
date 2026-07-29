@@ -8,18 +8,20 @@
         "2025-06-30"
       ],
       "n_breaks": 2,
-      "chow_tests": [
+      "turning_points": [
         {
           "break_date": "2021-04-30",
-          "F_stat": 17.259,
-          "p_value": 0.0,
-          "significant_5pct": true
+          "direction": "slowdown",
+          "n_settings_matched": 15,
+          "n_settings": 20,
+          "stability_pct": 75.0
         },
         {
           "break_date": "2025-06-30",
-          "F_stat": 4.09,
-          "p_value": 0.02056,
-          "significant_5pct": true
+          "direction": "acceleration",
+          "n_settings_matched": 14,
+          "n_settings": 20,
+          "stability_pct": 70.0
         }
       ]
     },
@@ -28,12 +30,13 @@
         "2025-06-30"
       ],
       "n_breaks": 1,
-      "chow_tests": [
+      "turning_points": [
         {
           "break_date": "2025-06-30",
-          "F_stat": 59.04,
-          "p_value": 0.0,
-          "significant_5pct": true
+          "direction": "acceleration",
+          "n_settings_matched": 19,
+          "n_settings": 20,
+          "stability_pct": 95.0
         }
       ]
     },
@@ -43,18 +46,20 @@
         "2025-06-30"
       ],
       "n_breaks": 2,
-      "chow_tests": [
+      "turning_points": [
         {
           "break_date": "2021-04-30",
-          "F_stat": 7.517,
-          "p_value": 0.00105,
-          "significant_5pct": true
+          "direction": "slowdown",
+          "n_settings_matched": 7,
+          "n_settings": 20,
+          "stability_pct": 35.0
         },
         {
           "break_date": "2025-06-30",
-          "F_stat": 22.971,
-          "p_value": 0.0,
-          "significant_5pct": true
+          "direction": "acceleration",
+          "n_settings_matched": 15,
+          "n_settings": 20,
+          "stability_pct": 75.0
         }
       ]
     }

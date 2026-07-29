@@ -1,33 +1,33 @@
-ticker,name,category,fiscal_year,net_income
-JPM,JPMorgan Chase,traditional_bank,2025,57048000000.0
-JPM,JPMorgan Chase,traditional_bank,2024,58471000000.0
-JPM,JPMorgan Chase,traditional_bank,2023,49552000000.0
-JPM,JPMorgan Chase,traditional_bank,2022,37676000000.0
-HSBC,HSBC,traditional_bank,2025,22285000000.0
-HSBC,HSBC,traditional_bank,2024,23979000000.0
-HSBC,HSBC,traditional_bank,2023,23533000000.0
-HSBC,HSBC,traditional_bank,2022,15559000000.0
-HSBC,HSBC,traditional_bank,2021,
-BCS,Barclays (ADR),traditional_bank,2025,7172000000.0
-BCS,Barclays (ADR),traditional_bank,2024,6307000000.0
-BCS,Barclays (ADR),traditional_bank,2023,5259000000.0
-BCS,Barclays (ADR),traditional_bank,2022,5928000000.0
-BCS,Barclays (ADR),traditional_bank,2021,
-SOFI,SoFi Technologies,neobank,2025,481320000.0
-SOFI,SoFi Technologies,neobank,2024,498665000.0
-SOFI,SoFi Technologies,neobank,2023,-300742000.0
-SOFI,SoFi Technologies,neobank,2022,-320407000.0
-SOFI,SoFi Technologies,neobank,2021,
-NU,Nubank,neobank,2025,2868892000.0
-NU,Nubank,neobank,2024,1972112000.0
-NU,Nubank,neobank,2023,1030530000.0
-NU,Nubank,neobank,2022,-364578000.0
-PYPL,PayPal,embedded_finance,2025,5233000000.0
-PYPL,PayPal,embedded_finance,2024,4147000000.0
-PYPL,PayPal,embedded_finance,2023,4246000000.0
-PYPL,PayPal,embedded_finance,2022,2419000000.0
-XYZ,Block (Square/Cash App),embedded_finance,2025,1305636000.0
-XYZ,Block (Square/Cash App),embedded_finance,2024,2897047000.0
-XYZ,Block (Square/Cash App),embedded_finance,2023,9772000.0
-XYZ,Block (Square/Cash App),embedded_finance,2022,-540747000.0
-XYZ,Block (Square/Cash App),embedded_finance,2021,
+ticker,name,category,fiscal_year,net_income,revenue
+JPM,JPMorgan Chase,traditional_bank,2025,57048000000.0,181847000000.0
+JPM,JPMorgan Chase,traditional_bank,2024,58471000000.0,169439000000.0
+JPM,JPMorgan Chase,traditional_bank,2023,49552000000.0,154952000000.0
+JPM,JPMorgan Chase,traditional_bank,2022,37676000000.0,127727000000.0
+HSBC,HSBC,traditional_bank,2025,22285000000.0,71020000000.0
+HSBC,HSBC,traditional_bank,2024,23979000000.0,67396000000.0
+HSBC,HSBC,traditional_bank,2023,23533000000.0,64528000000.0
+HSBC,HSBC,traditional_bank,2022,15559000000.0,53719000000.0
+HSBC,HSBC,traditional_bank,2021,,
+BCS,Barclays (ADR),traditional_bank,2025,7172000000.0,29140000000.0
+BCS,Barclays (ADR),traditional_bank,2024,6307000000.0,26230000000.0
+BCS,Barclays (ADR),traditional_bank,2023,5259000000.0,25384000000.0
+BCS,Barclays (ADR),traditional_bank,2022,5928000000.0,25021000000.0
+BCS,Barclays (ADR),traditional_bank,2021,,
+SOFI,SoFi Technologies,neobank,2025,481320000.0,3613354000.0
+SOFI,SoFi Technologies,neobank,2024,498665000.0,2612342000.0
+SOFI,SoFi Technologies,neobank,2023,-300742000.0,2108215000.0
+SOFI,SoFi Technologies,neobank,2022,-320407000.0,1573535000.0
+SOFI,SoFi Technologies,neobank,2021,,
+NU,Nubank,neobank,2025,2868892000.0,10626855000.0
+NU,Nubank,neobank,2024,1972112000.0,8269605000.0
+NU,Nubank,neobank,2023,1030530000.0,5632184000.0
+NU,Nubank,neobank,2022,-364578000.0,2971196000.0
+PYPL,PayPal,embedded_finance,2025,5233000000.0,33172000000.0
+PYPL,PayPal,embedded_finance,2024,4147000000.0,31797000000.0
+PYPL,PayPal,embedded_finance,2023,4246000000.0,29771000000.0
+PYPL,PayPal,embedded_finance,2022,2419000000.0,27518000000.0
+XYZ,Block (Square/Cash App),embedded_finance,2025,1305636000.0,24193683000.0
+XYZ,Block (Square/Cash App),embedded_finance,2024,2897047000.0,24121053000.0
+XYZ,Block (Square/Cash App),embedded_finance,2023,9772000.0,21915623000.0
+XYZ,Block (Square/Cash App),embedded_finance,2022,-540747000.0,17531587000.0
+XYZ,Block (Square/Cash App),embedded_finance,2021,,

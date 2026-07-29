@@ -76,13 +76,15 @@ beginning.
 
 Every message you receive will include a CONTEXT block with several parts:
 current parameter settings; live-computed sub-index values, peaks, and
-detected structural breaks with Chow test F-statistics and p-values; the
-underlying raw component signals (price, search, filings, profitability) and
-what companies/keywords each one is built from; a recent-months table of
-every series; the full, current text of this project's VERDICT.md (the
-written verdict and bottom line); and README.md's Findings section (the
-detailed Part 1/2/3 evidence -- price/profitability tables, structural break
-statistics, EDGAR filing counts, and the market-wide/sector-ETF
+detected turning points, each labelled with its direction (slowdown /
+acceleration) and a stability score (the share of parameter settings that also
+find that turning point -- high means robust, low means it depends on the exact
+settings); the underlying raw component signals (price, search, filings,
+profitability) and what companies/keywords each one is built from; a
+recent-months table of every series; the full, current text of this project's
+VERDICT.md (the written verdict and bottom line); and README.md's Findings
+section (the detailed Part 1/2/3 evidence -- price/profitability tables,
+turning-point stability, EDGAR filing counts, and the market-wide/sector-ETF
 generalization checks). Follow these rules strictly:
 
 1. Only cite numbers, dates, findings, or methodology details that literally
@@ -92,8 +94,8 @@ generalization checks). Follow these rules strictly:
    plainly in your answer, and make clear that mode is fabricated placeholder
    data used to demo the pipeline, not evidence for or against the thesis.
 3. Keep two things distinct, since CONTEXT now contains both:
-   - LIVE numbers (sub-index values, breaks, Chow stats) reflect whatever the
-     sliders are set to *right now*, which may differ from the numbers in
+   - LIVE numbers (sub-index values, turning points, stability scores) reflect
+     whatever the sliders are set to *right now*, which may differ from the numbers in
      VERDICT.md and README.md's Findings section -- both were written at the
      default 50/50 weight and are static snapshots, not auto-updating. If
      they disagree, say so rather than quietly picking one.
@@ -105,9 +107,9 @@ generalization checks). Follow these rules strictly:
    Wave 1 conclusions are backed by real market/profitability data and can be
    stated with real confidence; Wave 2 conclusions rest on thin, early
    evidence and should be described as suggestive, not proven.
-5. Be concise and specific. Cite exact numbers (F-statistics, p-values,
-   dates, z-scores, company tickers) when relevant -- specific figures are
-   what make an answer useful in a live presentation setting.
+5. Be concise and specific. Cite exact numbers (turning-point dates and their
+   stability scores, z-scores, company tickers) when relevant -- specific
+   figures are what make an answer useful in a live presentation setting.
 6. If the question asks something CONTEXT genuinely can't answer, say so
    plainly rather than guessing or reasoning beyond the provided data.
 """
@@ -122,17 +124,17 @@ def _fmt(x, decimals=3):
 def _series_break_lines(breaks: dict, series_key: str, label: str) -> str:
     info = breaks["series"][series_key]
     if not info["break_dates"]:
-        return f"  {label}: no statistically confirmed breaks at current settings."
-    lines = [f"  {label}: {info['n_breaks']} break(s) detected"]
-    for ct in info["chow_tests"]:
-        if "F_stat" in ct:
-            sig = "significant at 5%" if ct["significant_5pct"] else "NOT significant at 5%"
-            lines.append(
-                f"    - {ct['break_date']}: Chow F={_fmt(ct['F_stat'])}, "
-                f"p={_fmt(ct['p_value'], 5)} ({sig})"
-            )
-        else:
-            lines.append(f"    - {ct.get('break_date')}: {ct.get('note', 'could not test')}")
+        return f"  {label}: no turning point detected at current settings."
+    lines = [f"  {label}: {info['n_breaks']} turning point(s) detected"]
+    for tp in info["turning_points"]:
+        strength = ("robust" if tp["stability_pct"] >= 70
+                    else "moderate" if tp["stability_pct"] >= 40
+                    else "fragile")
+        lines.append(
+            f"    - {tp['break_date']}: {tp['direction']} "
+            f"(stable across {tp['stability_pct']}% of parameter settings, "
+            f"{tp['n_settings_matched']}/{tp['n_settings']} -- {strength})"
+        )
     return "\n".join(lines)
 
 
@@ -269,7 +271,7 @@ PEAKS
   Wave 1 sub-index peaked {_fmt(df['wave1'].max())} on {peak_w1_date.date()}
   Wave 2 sub-index peaked {_fmt(df['wave2'].max())} on {peak_w2_date.date()}
 
-DETECTED STRUCTURAL BREAKS (PELT candidate + Chow test confirmation)
+DETECTED TURNING POINTS (PELT change-point + parameter-stability score)
 {_series_break_lines(breaks, 'wave1', 'Wave 1 sub-index')}
 {_series_break_lines(breaks, 'wave2', 'Wave 2 sub-index')}
 {_series_break_lines(breaks, 'FDI', 'Composite FDI')}

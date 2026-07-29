@@ -69,20 +69,23 @@ MAX_STEPS_DEFAULT = 6
 
 SYSTEM_INSTRUCTIONS = """\
 You are a robustness/red-team analyst for a thesis titled "Fintech Two-Wave
-Disruption Index." The thesis detects structural breaks in a Wave 1
+Disruption Index." The thesis detects turning points in a Wave 1
 (payments/neobanks/embedded finance) sub-index, a Wave 2 (AI-native finance)
 sub-index, and a composite FDI, using PELT change-point detection on
-12-month momentum plus a Chow test for significance. Three parameters govern
-this: w1_weight (composite blend), pelt_penalty (higher = fewer, more
-conservative breaks), and momentum_window (months).
+12-month momentum. Each turning point comes with a direction (slowdown /
+acceleration) and a stability score. Three parameters govern this: w1_weight
+(composite blend), pelt_penalty (higher = fewer, more conservative turning
+points), and momentum_window (months).
 
-Your job: determine whether the breaks the project reports are robust (they
-keep showing up, with Chow significance, across a reasonable range of these
-three parameters) or fragile (they only appear at one specific setting).
+Your job: determine whether the turning points the project reports are robust
+(they keep showing up across a reasonable range of these three parameters) or
+fragile (they only appear at one specific setting). This complements the
+project's own built-in stability score -- you are the qualitative, exploratory
+version of the same check.
 
-You have one tool, `probe`, which actually recomputes the index and break
-tests at whatever parameters you choose and returns the real break dates and
-Chow F-stat/p-value for wave1, wave2, and FDI. Valid ranges:
+You have one tool, `probe`, which actually recomputes the index and turning
+points at whatever parameters you choose and returns the real turning-point
+dates, directions, and stability scores for wave1, wave2, and FDI. Valid ranges:
   w1_weight: 0.0-1.0 (note: only affects the FDI composite, not wave1/wave2
     individually -- don't expect it to move sub-index breaks)
   pelt_penalty: 0.5-10.0
@@ -95,8 +98,8 @@ Procedure:
    robustness of. Do not assume specific dates in advance.
 2. Then choose further probes yourself -- vary one or more parameters away
    from the defaults, in directions you think are most likely to make a
-   reported break appear or disappear -- to see whether the same break dates
-   (roughly) and their significance survive.
+   reported break appear or disappear -- to see whether the same turning-point
+   dates (roughly) and their directions survive.
 3. You do not need to grid-search exhaustively. Stop once you have enough
    evidence to characterize each headline break as robust, fragile, or
    parameter-dependent (e.g. "only survives when momentum_window >= 9"), or
@@ -104,7 +107,8 @@ Procedure:
 4. When you stop calling the tool, write a final verdict as plain text (no
    further tool calls). For each headline break: state whether it is robust,
    fragile, or parameter-dependent, and cite the specific probe results
-   (parameters + Chow F/p) that support that call. Only cite numbers that
+   (parameters + turning-point dates/directions/stability) that support that
+   call. Only cite numbers that
    actually came back from a probe call -- never invent or estimate a result
    you didn't get from the tool. Be concise and specific; this will be read
    by someone deciding how much to trust the thesis's headline finding.
@@ -113,10 +117,11 @@ Procedure:
 PROBE_FUNCTION_DECLARATION = {
     "name": "probe",
     "description": (
-        "Recompute the Wave 1 / Wave 2 / FDI sub-indices and run structural "
-        "break detection (PELT + Chow test) at the given parameters. Returns "
-        "the actual break dates and Chow F-stat/p-value found at this exact "
-        "setting."
+        "Recompute the Wave 1 / Wave 2 / FDI sub-indices and detect turning "
+        "points (PELT change-point detection) at the given parameters. Returns "
+        "the actual turning-point dates found at this exact setting, each with a "
+        "direction (slowdown / acceleration) and a stability score (the share of "
+        "a parameter grid that also finds it)."
     ),
     "parameters": {
         "type": "object",
@@ -178,15 +183,13 @@ def probe(w1_weight: float, pelt_penalty: float, momentum_window: int,
         info = breaks["series"][col]
         out["series"][col] = {
             "break_dates": info["break_dates"],
-            "chow_tests": [
+            "turning_points": [
                 {
-                    "break_date": ct.get("break_date"),
-                    "F_stat": ct.get("F_stat"),
-                    "p_value": ct.get("p_value"),
-                    "significant_5pct": ct.get("significant_5pct"),
+                    "break_date": tp.get("break_date"),
+                    "direction": tp.get("direction"),
+                    "stability_pct": tp.get("stability_pct"),
                 }
-                if "F_stat" in ct else ct
-                for ct in info["chow_tests"]
+                for tp in info["turning_points"]
             ],
         }
     return out
