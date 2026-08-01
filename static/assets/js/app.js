@@ -1,5 +1,5 @@
 /* app.js -- dashboard wiring: state, tabs, sidebar controls, tables,
-   markdown rendering, AI assistant, robustness agent. */
+   markdown rendering, AI assistant. */
 
 (() => {
   const state = {
@@ -26,6 +26,13 @@
   function fmtMoney(x) {
     if (x === null || x === undefined) return "n/a";
     return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(x);
+  }
+  // Filing passages + LLM output are injected via innerHTML below, so escape
+  // any HTML-special characters first -- a stray "<" in a filing must not break
+  // the markup (and must never execute).
+  function escapeHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
   // -------------------------------------------------------------- theme --
@@ -189,9 +196,6 @@
       scheduleIndexFetch();
       if ($("#tab-convergence").classList.contains("active")) loadConvergence();
     });
-    $("#probe_budget").addEventListener("input", (e) => {
-      $("#probe_budget_val").textContent = e.target.value;
-    });
   }
 
   // -------------------------------------------------- Index Construction --
@@ -254,6 +258,91 @@
     }
   }
 
+  async function loadEdgarStance() {
+    const summaryEl = $("#edgar-stance-summary");
+    const passagesEl = $("#edgar-stance-passages");
+    if (!summaryEl) return;
+    try {
+      const data = await Api.edgarStance();
+      if (!data.available) {
+        summaryEl.innerHTML = `<p class="tab-intro">${escapeHtml(data.detail || "Stance not classified yet.")}</p>`;
+        passagesEl.innerHTML = "";
+        return;
+      }
+      renderEdgarStance(data);
+    } catch (e) {
+      summaryEl.innerHTML = `<p class="tab-intro">Could not load stance classification: ${escapeHtml(e.message)}</p>`;
+    }
+  }
+
+  function renderEdgarStance(data) {
+    const order = data.stance_order; // deploying, exploring, risk, unclear
+    const label = { deploying: "Deploying", exploring: "Exploring", risk: "Risk / threat", unclear: "Unclear" };
+
+    // Per-company summary table: a stacked stance bar + counts + dominant label.
+    const rows = data.summary.map((r) => {
+      const bar = order.filter((s) => r[s] > 0).map((s) =>
+        `<span class="stance-${s}" style="flex:${r[s]}" title="${label[s]}: ${r[s]}"></span>`).join("");
+      const counts = order.map((s) =>
+        `<span class="stance-${s}" style="color:var(--stance-c)">${r[s]}</span>`).join(" / ");
+      return `<tr>
+        <td>${escapeHtml(r.ticker)}</td>
+        <td>${escapeHtml(r.name)}</td>
+        <td>${escapeHtml(r.category.replace("_", " "))}</td>
+        <td><div class="stance-bar">${bar}</div></td>
+        <td style="white-space:nowrap">${counts}</td>
+        <td><span class="stance-badge stance-${r.dominant}">${escapeHtml(label[r.dominant] || r.dominant)}</span></td>
+      </tr>`;
+    }).join("");
+
+    $("#edgar-stance-summary").innerHTML = `
+      <table><thead><tr>
+        <th>Ticker</th><th>Company</th><th>Category</th><th>Stance mix</th>
+        <th title="deploying / exploring / risk / unclear">D / E / R / U</th><th>Dominant</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+
+    // Each passage: its stance badge, the verbatim quote the model cited, and
+    // its one-line rationale -- so every label traces back to a sentence a
+    // reader can re-check against the filing.
+    const card = (p) => `
+      <div class="stance-passage stance-${p.stance}">
+        <div class="stance-passage-head">
+          <span class="stance-badge stance-${p.stance}">${escapeHtml(label[p.stance] || p.stance)}</span>
+          <b>${escapeHtml(p.ticker)}</b>
+          <span class="muted">${escapeHtml(p.name)} · ${escapeHtml(String(p.fiscal_year))} ${escapeHtml(p.form)} · subject: ${escapeHtml(p.subject)}</span>
+        </div>
+        <blockquote>${escapeHtml(p.quote)}</blockquote>
+        <div class="stance-rationale">${escapeHtml(p.rationale)}</div>
+      </div>`;
+
+    // Default to the clearest thesis-relevant signals -- "deploying" and "risk"
+    // are the two poles Part 3 contrasts (fintechs building vs. banks flagging
+    // a threat). "exploring" and "unclear" are the muddy middle; they're still
+    // rendered but collapsed behind a toggle, so nothing is removed -- and the
+    // counts table above always reflects ALL passages. This is a presentation
+    // default, not a filter on the evidence.
+    const PRIMARY = new Set(["deploying", "risk"]);
+    const primary = data.passages.filter((p) => PRIMARY.has(p.stance));
+    const secondary = data.passages.filter((p) => !PRIMARY.has(p.stance));
+
+    const collapsedLabel = `Show ${secondary.length} exploratory / unclear passage${secondary.length === 1 ? "" : "s"}`;
+    $("#edgar-stance-passages").innerHTML =
+      `<div class="stance-passages">${primary.map(card).join("")}</div>` +
+      (secondary.length
+        ? `<div class="stance-passages stance-secondary" id="stance-secondary" hidden>${secondary.map(card).join("")}</div>
+           <button type="button" class="stance-toggle" id="stance-toggle-btn">${collapsedLabel}</button>`
+        : "");
+
+    const btn = $("#stance-toggle-btn");
+    if (btn) {
+      btn.addEventListener("click", () => {
+        const sec = $("#stance-secondary");
+        sec.hidden = !sec.hidden;
+        btn.textContent = sec.hidden ? collapsedLabel : "Hide exploratory / unclear";
+      });
+    }
+  }
+
   function renderDataCollection(data) {
     Charts.indexedPerformance("chart-indexed-performance", data.indexed_performance, data.ticker_order);
     Charts.trendsComparison("chart-trends", data.trends_yearly);
@@ -299,6 +388,10 @@
     } catch (e) {
       $("#tab-robustness").insertAdjacentHTML("afterbegin", `<div class="synthetic-notice">${e.message}</div>`);
     }
+    // Loaded independently: the stance panel needs classify_filings.py to have
+    // run (LLM + API key), which the other robustness charts do not -- so its
+    // absence must not block them.
+    loadEdgarStance();
   }
 
   function renderRobustnessChecks(data) {
@@ -327,51 +420,6 @@
     $("#convergence-caption").textContent =
       `${w1} Wave 1 signals (warm) and ${w2} Wave 2 signals (cool), each z-scored and smoothed. `
       + "No single line proves the thesis — the argument is that independent sources move together.";
-    const waveLabel = { wave1: "Wave 1", wave2: "Wave 2" };
-    const rows = data.signals.map((s) =>
-      `<tr><td>${s.label}</td><td>${waveLabel[s.wave]}</td><td>${s.peak_date || "—"}</td></tr>`).join("");
-    $("#table-convergence").innerHTML =
-      `<table><thead><tr><th>Signal</th><th>Wave</th><th>Peaks (smoothed)</th></tr></thead><tbody>${rows}</tbody></table>`;
-  }
-
-  function initRobustnessAgent() {
-    $("#run-robustness").addEventListener("click", async () => {
-      const apiKey = $("#gemini_api_key").value.trim();
-      const statusEl = $("#robustness-status");
-      const btn = $("#run-robustness");
-      btn.disabled = true;
-      statusEl.textContent = "Agent is probing the parameter space — this calls Gemini repeatedly and may take a minute or two…";
-      $("#robustness-result").innerHTML = "";
-      try {
-        const result = await Api.robustnessRun({
-          max_steps: parseInt($("#probe_budget").value, 10),
-          synthetic: state.use_synthetic,
-          api_key: apiKey || null,
-        });
-        renderRobustnessResult(result);
-        statusEl.textContent = `${result.steps_used}/${result.max_steps} probes used` + (result.used_synthetic ? " · synthetic data" : "");
-      } catch (e) {
-        statusEl.textContent = `Robustness agent failed: ${e.message}`;
-      } finally {
-        btn.disabled = false;
-      }
-    });
-  }
-
-  function renderRobustnessResult(result) {
-    const trace = result.trace.map((entry, i) => {
-      const p = entry.params;
-      const header = `<div class="probe-params"><b>Probe ${i + 1}</b> — w1_weight=${p.w1_weight}, pelt_penalty=${p.pelt_penalty}, momentum_window=${p.momentum_window}</div>`;
-      if (entry.error) return `<div class="probe-entry">${header}<div class="probe-breaks">error: ${entry.error}</div></div>`;
-      const cols = ["wave1", "wave2", "FDI"].map((k) => {
-        const dates = entry.result[k].break_dates;
-        return `${k}: ${dates.length ? dates.join(", ") : "none"}`;
-      }).join(" &nbsp;·&nbsp; ");
-      return `<div class="probe-entry">${header}<div class="probe-breaks">${cols}</div></div>`;
-    }).join("");
-    $("#robustness-result").innerHTML = `
-      <details class="ai-key-details" open><summary>Probe trace (${result.trace.length} calls)</summary>${trace}</details>
-      <div class="markdown-body">${marked.parse(result.verdict || "")}</div>`;
   }
 
   // --------------------------------------------------------------- Verdict --
@@ -381,7 +429,6 @@
       const data = await Api.verdict();
       state.verdictLoaded = true;
       $("#verdict-md").innerHTML = marked.parse(data.verdict_md || "");
-      $("#findings-md").innerHTML = marked.parse(data.findings_md || "");
     } catch (e) {
       $("#verdict-md").innerHTML = `<p>${e.message}</p>`;
     }
@@ -455,13 +502,71 @@
     }
   }
 
+  // ------------------------------------------------- robustness agent --
+
+  function initRobustnessAgent() {
+    const btn = $("#run-agent-btn");
+    if (!btn) return;
+    btn.addEventListener("click", async () => {
+      const hint = $("#agent-hint");
+      const traceEl = $("#agent-trace");
+      const verdictEl = $("#agent-verdict");
+      btn.disabled = true;
+      hint.textContent = "The agent is choosing and running its probes — this makes a few Gemini calls, so give it a moment…";
+      traceEl.innerHTML = "";
+      verdictEl.innerHTML = "";
+      try {
+        const apiKey = $("#gemini_api_key").value.trim();
+        const res = await Api.robustnessAgent({
+          synthetic: state.use_synthetic,
+          api_key: apiKey || null,
+        });
+        renderAgentRun(res);
+        hint.textContent = "";
+      } catch (e) {
+        hint.textContent = "";
+        verdictEl.innerHTML = `<p class="tab-intro">Agent run failed: ${escapeHtml(e.message)}</p>`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  function renderAgentRun(res) {
+    const note = res.used_synthetic
+      ? `<div class="synthetic-notice">Synthetic placeholder data — the breaks below test the method, not the thesis.</div>`
+      : "";
+
+    // Each probe the agent chose to run, with the break dates it got back --
+    // so a viewer sees the agent's actual exploration, not just its conclusion.
+    const probes = res.trace.map((entry, i) => {
+      const p = entry.params || {};
+      const head = `<b>Probe ${i + 1}</b> <span class="muted">w1=${escapeHtml(String(p.w1_weight))}, penalty=${escapeHtml(String(p.pelt_penalty))}, window=${escapeHtml(String(p.momentum_window))}</span>`;
+      if (entry.error) {
+        return `<div class="agent-probe"><div class="agent-probe-head">${head}</div><div class="stance-rationale">error: ${escapeHtml(entry.error)}</div></div>`;
+      }
+      const series = ["wave1", "wave2", "FDI"].map((col) => {
+        const info = (entry.result && entry.result[col]) || {};
+        const dates = (info.break_dates && info.break_dates.length) ? info.break_dates.join(", ") : "none";
+        return `<div class="agent-series"><span class="agent-series-name">${col}</span> ${escapeHtml(dates)}</div>`;
+      }).join("");
+      return `<div class="agent-probe"><div class="agent-probe-head">${head}</div>${series}</div>`;
+    }).join("");
+
+    $("#agent-trace").innerHTML =
+      `${note}<div class="agent-probes-head muted">${res.steps_used}/${res.max_steps} probes used</div>
+       <div class="agent-probes">${probes}</div>`;
+    $("#agent-verdict").innerHTML =
+      `<h4 class="agent-verdict-title">Agent verdict</h4><div class="agent-verdict-body">${marked.parse(res.verdict || "")}</div>`;
+  }
+
   // ------------------------------------------------------------- init --
 
   async function init() {
     initTheme();
     initTabs();
-    initRobustnessAgent();
     initAiAssistant();
+    initRobustnessAgent();
     const status = await Api.status();
     initSidebar(status);
     await fetchIndex();

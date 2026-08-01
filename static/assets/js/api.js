@@ -33,11 +33,12 @@ const Api = (() => {
     status: () => get("/api/status"),
     index: (params) => get("/api/index", params),
     dataCollection: () => get("/api/data-collection"),
+    edgarStance: () => get("/api/edgar-stance"),
     robustnessChecks: () => get("/api/robustness-checks"),
     convergence: (params) => get("/api/convergence", params),
     verdict: () => get("/api/verdict"),
     aiSummary: (body) => post("/api/ai/summary", body),
     aiChat: (body) => post("/api/ai/chat", body),
-    robustnessRun: (body) => post("/api/robustness/run", body),
+    robustnessAgent: (body) => post("/api/robustness-agent", body),
   };
 })();

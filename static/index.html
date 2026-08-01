@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Fintech Two-Wave Disruption Index</title>
+<title>Fintech Disruption of Traditional Banking</title>
 <link rel="stylesheet" href="/assets/css/style.css">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -12,7 +12,7 @@
 
 <header class="topbar">
   <div class="topbar-title">
-    <h1>Fintech Two-Wave Disruption Index</h1>
+    <h1>Fintech Disruption of Traditional Banking</h1>
     <span id="data-badge" class="badge badge-muted">loading…</span>
   </div>
   <button id="theme-toggle" class="icon-btn" title="Toggle light/dark" aria-label="Toggle theme">◐</button>
@@ -50,7 +50,7 @@
     <details class="ai-key-details">
       <summary>Gemini API key</summary>
       <input type="password" id="gemini_api_key" placeholder="AI Studio key (ai.google.dev)">
-      <p class="control-hint">Only used in this browser session, never sent anywhere but this server. Needed for the AI assistant and robustness agent.</p>
+      <p class="control-hint">Only used in this browser session, never sent anywhere but this server. Needed for the AI assistant.</p>
     </details>
   </aside>
 
@@ -66,7 +66,6 @@
     </nav>
 
     <section id="tab-data-collection" class="tab-panel active">
-      <p class="tab-intro">The four independent sources collected and combined into the index below. Real collector output, not backtested against the thesis.</p>
 
       <div class="card">
         <h3>Indexed price performance <span class="muted">(rebased to 100 at each ticker's start date)</span></h3>
@@ -97,7 +96,6 @@
 
       <div class="card">
         <h3>Revenue-share proxy <span class="muted">(fintech share of the fintech + bank revenue pool)</span></h3>
-        <p class="tab-intro">The thesis question is about <b>market share</b>. Stock price only stands in for that — a stock can fall while the business keeps growing. Revenue is a closer proxy: does fintech keep taking a bigger slice of the combined revenue pool, or has its share plateaued? (yfinance exposes ~4 fiscal years, so this is a recent snapshot, not a long history.)</p>
         <div id="chart-revenue-share" class="chart"></div>
       </div>
     </section>
@@ -115,7 +113,7 @@
     </section>
 
     <section id="tab-structural-breaks" class="tab-panel">
-      <p class="tab-intro">Where did each sub-index's momentum change regime? PELT change-point detection flags the turning points; each one is then scored for <b>stability</b> — the share of parameter settings (penalty × momentum window) that also find it. A turning point that survives most settings is a real regime change; one that only appears at one exact setting is fragile. (This replaces the earlier Chow test, whose p-values were biased because the break date was estimated from the same data — see the README note.)</p>
+      <p class="tab-intro">PELT change-point detection flags the turning points; each one is then scored for <b>stability</b>. A turning point that survives most settings is a real regime change; one that only appears at one exact setting is fragile.</p>
       <div class="stat-row" id="break-stats"></div>
       <div class="card">
         <h3>Detected turning points &amp; stability</h3>
@@ -144,37 +142,35 @@
       </div>
 
       <div class="card">
+        <h3>What the agentic passages actually say <span class="muted">(deploying vs. exploring vs. naming it a risk)</span></h3>
+        <p class="tab-intro">The agentic-mention <i>count</i> (Data Collection tab) treats every "agentic" mention alike. But reading the passages, an LLM (<code>classify_filings.py</code>) separates three very different things a filing can be doing with the same word: <b>deploying</b> agentic AI in its own products, <b>exploring</b> it, or naming it as a <b>risk / competitive threat</b>. This is the one read the raw count structurally cannot give — and it sharpens Part 3: the big banks' mentions are almost entirely risk disclosures, not deployment. The passages below show the clearest signals (deploying / risk); the table's counts cover all of them, and exploratory / unclear ones are one click away.</p>
+        <div id="edgar-stance-summary" class="table-wrap"></div>
+        <div id="edgar-stance-passages"></div>
+      </div>
+
+      <div class="card">
         <h3>Macro-confound control <span class="muted">(fintech vs. growth benchmarks, not just banks)</span></h3>
         <p class="tab-intro">The obvious objection to "fintech rolled over ~2021" is that <i>every</i> unprofitable growth stock sold off in 2022's rate-hike cycle — so this may say nothing fintech-specific. This checks it: the fintech basket's strength relative to <b>QQQ</b> (broad Nasdaq-100 growth) and <b>ARKK</b> (speculative disruptive growth). If fintech underperforms even these, the decline is fintech-specific, not just the growth-stock tide going out.</p>
         <div id="chart-macro-control" class="chart chart-tall"></div>
       </div>
 
       <div class="card">
-        <h3>Robustness agent <span class="muted">(Gemini tool-calling loop)</span></h3>
-        <p class="tab-intro">Recomputes the index at parameter settings it chooses itself, to check whether each headline break survives across the parameter space or only appears at one exact setting.</p>
-        <label class="control">
-          <span class="control-label">Probe budget (max tool calls) <b id="probe_budget_val">6</b></span>
-          <input type="range" id="probe_budget" min="3" max="8" step="1" value="6">
-        </label>
-        <button id="run-robustness" class="btn btn-primary">Run robustness agent</button>
-        <div id="robustness-status" class="status-line"></div>
-        <div id="robustness-result"></div>
+        <h3>Robustness agent <span class="muted">(a tool-using LLM red-teams the headline breaks)</span></h3>
+        <p class="tab-intro">The stability score is a <i>deterministic</i> grid sweep. This is its qualitative counterpart: a Gemini agent with one tool — <code>probe(w1_weight, pelt_penalty, momentum_window)</code>, which recomputes the index and turning points — decides for itself which parameter settings to test, then judges whether each headline break is robust, fragile, or parameter-dependent. It can only probe within the same bounds the sidebar sliders expose, and is capped at a few probes so one run stays cheap. Watch it choose its probes below.</p>
+        <button type="button" class="btn-primary" id="run-agent-btn">Run robustness agent</button>
+        <p class="control-hint" id="agent-hint"></p>
+        <div id="agent-trace"></div>
+        <div id="agent-verdict"></div>
       </div>
+
     </section>
 
     <section id="tab-convergence" class="tab-panel">
-      <p class="tab-intro">The whole argument in one view. Each independent signal is put on the same scale (z-scored, smoothed to show the trend, not the noise). The case for the two-wave story isn't any single statistic — it's that <b>unrelated datasets agree</b>: the market and profitability signals peak and roll over together around 2021, while the AI-language and AI-search signals inflect upward together around 2024. Wave 1 signals are shown in warm colours, Wave 2 in cool.</p>
-
+      <p class="tab-intro">The whole argument in one view. Each independent signal is put on the same scale (z-scored, smoothed to show the trend, not the noise). </p>
       <div class="card">
         <h3>Every signal on one scale <span class="muted">(z-scored, 6-month smoothed)</span></h3>
         <div id="chart-convergence" class="chart chart-tall"></div>
         <p class="control-hint" id="convergence-caption"></p>
-      </div>
-
-      <div class="card">
-        <h3>When each signal peaks</h3>
-        <p class="tab-intro">Read down the two groups: Wave 1's market/profitability signals top out early; Wave 2's AI signals top out late. (Wave 1 search interest is the honest exception — "mobile banking" and the like kept climbing as the category went mainstream, even as the <i>competitive</i> edge faded.)</p>
-        <div id="table-convergence" class="table-wrap"></div>
       </div>
     </section>
 
@@ -184,11 +180,6 @@
       <div class="card">
         <h3>Written verdict</h3>
         <div id="verdict-md" class="markdown-body"></div>
-      </div>
-
-      <div class="card">
-        <h3>Detailed findings <span class="muted">(README.md)</span></h3>
-        <div id="findings-md" class="markdown-body"></div>
       </div>
 
       <div class="card">

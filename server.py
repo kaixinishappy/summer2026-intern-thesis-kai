@@ -4,11 +4,10 @@ server.py
 FastAPI backend for the Fintech Two-Wave Disruption Index dashboard.
 
 Replaces app.py's Streamlit app: same live parameter recompute
-(build_index.py), same Gemini research assistant (ai_assistant.py), and same
-robustness agent (robustness_agent.py) -- just exposed as a small JSON API
-consumed by a plain HTML/JS/Plotly frontend (static/) instead of rendered
-server-side by Streamlit. Charts are drawn in the browser from real numbers,
-not shipped as PNGs.
+(build_index.py) and same Gemini research assistant (ai_assistant.py) --
+just exposed as a small JSON API consumed by a plain HTML/JS/Plotly
+frontend (static/) instead of rendered server-side by Streamlit. Charts
+are drawn in the browser from real numbers, not shipped as PNGs.
 
 Run:
     pip install -r requirements.txt
@@ -63,6 +62,7 @@ INDEXED_PERFORMANCE_CSV = os.path.join(RAW_DIR, "indexed_performance.csv")
 TRENDS_YEARLY_CSV = os.path.join(PROCESSED_DIR, "trends_yearly.csv")
 MARKET_MARKETWIDE_CSV = os.path.join(RAW_DIR, "market_marketwide.csv")
 EDGAR_MARKETWIDE_CSV = os.path.join(RAW_DIR, "edgar_marketwide.csv")
+EDGAR_STANCE_CSV = os.path.join(RAW_DIR, "edgar_stance.csv")
 
 # Fixed ticker order (matches build_index.py's baskets) -- the frontend
 # assigns chart colors by this order, never by rank, so a ticker keeps its
@@ -131,8 +131,6 @@ def status():
             "pelt_penalty": PELT_PENALTY,
             "momentum_window": MOMENTUM_WINDOW,
         },
-        "robustness_max_steps_default": robustness_agent.MAX_STEPS_DEFAULT,
-        "robustness_param_bounds": robustness_agent.PARAM_BOUNDS,
         "tickers": {
             "legacy": LEGACY_TICKERS,
             "fintech": FINTECH_TICKERS,
@@ -247,6 +245,63 @@ def _revenue_share(fundamentals: pd.DataFrame) -> list[dict]:
             "fintech_share_pct": round(100 * fintech_rev / (fintech_rev + legacy_rev), 2),
         })
     return rows
+
+
+# --------------------------------------------------------------------------- #
+# EDGAR agentic-language STANCE -- classify_filings.py's read of what each
+# company's agentic passages actually SAY (deploying / exploring / risk), not
+# just how many there are. Separate route from /api/data-collection on purpose:
+# the count table only needs the collectors, but stance needs the (API-key,
+# LLM) classify stage to have run, so a missing edgar_stance.csv degrades this
+# panel alone instead of 404-ing the whole Data Collection tab.
+# --------------------------------------------------------------------------- #
+
+# Stances ordered strongest-adoption -> weakest, so the frontend can render a
+# stacked bar in a stable, meaningful left-to-right order regardless of counts.
+STANCE_ORDER = ["deploying", "exploring", "risk", "unclear"]
+
+
+@app.get("/api/edgar-stance")
+def edgar_stance():
+    """Per-company stance mix + the underlying classified passages. Returns
+    available=False (not an error) when classify_filings.py hasn't been run,
+    so the frontend can show a 'not yet classified' hint rather than a failure."""
+    if not os.path.exists(EDGAR_STANCE_CSV):
+        return {"available": False,
+                "detail": "edgar_stance.csv not found -- run: python classify_filings.py"}
+
+    df = pd.read_csv(EDGAR_STANCE_CSV)
+    if df.empty:
+        return {"available": False, "detail": "edgar_stance.csv is empty."}
+
+    # Per-company stance counts + dominant label, in the market-basket ticker
+    # order so a company keeps its row position across the dashboard.
+    summary = []
+    order = {t: i for i, t in enumerate(TICKER_ORDER)}
+    for ticker, grp in df.groupby("ticker", sort=False):
+        counts = grp["stance"].value_counts()
+        row = {
+            "ticker": ticker,
+            "name": grp["name"].iloc[0],
+            "category": grp["category"].iloc[0],
+            "total": int(len(grp)),
+            "dominant": grp["stance"].mode().iloc[0],
+        }
+        for s in STANCE_ORDER:
+            row[s] = int(counts.get(s, 0))
+        summary.append(row)
+    summary.sort(key=lambda r: order.get(r["ticker"], len(order)))
+
+    passage_cols = ["ticker", "name", "category", "fiscal_year", "form",
+                    "stance", "subject", "quote", "rationale", "passage"]
+    passages = df[[c for c in passage_cols if c in df.columns]]
+
+    return {
+        "available": True,
+        "stance_order": STANCE_ORDER,
+        "summary": summary,
+        "passages": _records(passages),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -385,7 +440,6 @@ def convergence(synthetic: bool = Query(False)):
 def verdict():
     return {
         "verdict_md": ai_assistant._read_project_doc("VERDICT.md"),
-        "findings_md": ai_assistant._read_findings_section(),
     }
 
 
@@ -442,31 +496,40 @@ def ai_chat(req: AIChatRequest):
 
 
 # --------------------------------------------------------------------------- #
-# robustness agent (Gemini tool-calling loop) -- same probe()/run_agent() as
-# robustness_agent.py, just returned as JSON instead of rendered by Streamlit
+# Robustness agent -- the tool-using agent from robustness_agent.py, exposed so
+# the Robustness tab can run it live and show its probe-by-probe trace + final
+# verdict. Unlike the stability score (a deterministic grid sweep), this is the
+# qualitative, exploratory version: the model chooses which parameter settings
+# to probe. Synchronous (the run is a handful of LLM calls); the frontend shows
+# a spinner. Capped at a few steps so one run can't drain the free-tier quota.
 # --------------------------------------------------------------------------- #
 
-class RobustnessRunRequest(BaseModel):
-    max_steps: int = robustness_agent.MAX_STEPS_DEFAULT
+class RobustnessAgentRequest(BaseModel):
     synthetic: bool = False
+    max_steps: int = robustness_agent.MAX_STEPS_DEFAULT
     api_key: str | None = None
 
 
-@app.post("/api/robustness/run")
-def robustness_run(req: RobustnessRunRequest):
+@app.post("/api/robustness-agent")
+def run_robustness_agent(req: RobustnessAgentRequest):
     api_key = _resolve_api_key(req.api_key)
     if not api_key:
         raise HTTPException(status_code=400, detail="No Gemini API key configured.")
-    max_steps = max(1, min(8, req.max_steps))
-    forced_synthetic = req.synthetic or not REAL_DATA_AVAILABLE
+    # Force synthetic when real data is missing, exactly like _build_context, so
+    # the agent probes the same data the rest of the dashboard is showing.
+    use_synthetic = req.synthetic or not REAL_DATA_AVAILABLE
+    # Bound max_steps to the agent's own default so a hand-crafted request can't
+    # ask for an unbounded (quota-draining) run.
+    max_steps = max(1, min(int(req.max_steps), robustness_agent.MAX_STEPS_DEFAULT))
     try:
-        result = robustness_agent.run_agent(api_key, use_synthetic=forced_synthetic, max_steps=max_steps)
+        result = robustness_agent.run_agent(api_key, use_synthetic=use_synthetic, max_steps=max_steps)
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
     return {
-        "trace": result.trace,
-        "verdict": result.verdict,
         "used_synthetic": result.used_synthetic,
         "steps_used": result.steps_used,
         "max_steps": result.max_steps,
+        "trace": result.trace,
+        "verdict": result.verdict,
     }
+

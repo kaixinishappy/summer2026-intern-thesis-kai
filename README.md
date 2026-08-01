@@ -64,18 +64,22 @@ into the composite FDI — they're validation charts, not additional index input
 ├── collect_trends.py      # data collection: Google Trends, Wave 1 & 2 keyword groups
 ├── collect_edgar.py       # data collection: SEC EDGAR filing mentions
 ├── collect_edgar_marketwide.py # check: 7-company sample vs. every SEC 10-K filer
+├── classify_filings.py    # reads the agentic passages, LLM-classifies each as
+│                          #   deploying / exploring / risk (sharpens Part 3)
 ├── build_index.py         # builds sub-indices + composite, runs break tests
 ├── make_charts.py         # the three headline charts (reads output/, writes charts/)
 ├── app.py                 # Streamlit app: live sliders, recomputes in real time
 ├── ai_assistant.py        # Gemini research assistant: live summary + Q&A, used by app.py
-├── robustness_agent.py    # Gemini tool-calling agent: sweeps parameters to stress-test the breaks
+├── robustness_agent.py    # tool-using Gemini agent: red-teams the headline
+│                          #   breaks by choosing its own parameter probes
 ├── data/
 │   ├── raw/                   # prices.csv, fundamentals.csv, indexed_performance.csv,
 │   │                          # market_marketwide.csv, wave1_trends.csv, wave2_trends.csv,
-│   │                          # edgar_mentions.csv, edgar_marketwide.csv
+│   │                          # edgar_mentions.csv, edgar_marketwide.csv,
+│   │                          # edgar_passages.csv, edgar_stance.csv
 │   └── processed/             # trends_yearly.csv
 ├── charts/                # per-collector charts + the three headline charts (*.png)
-├── output/                # fdi.csv, break_results.json, robustness_report.md (from build_index.py / robustness_agent.py)
+├── output/                # fdi.csv, break_results.json (from build_index.py)
 ├── VERDICT.md             # written verdict
 └── README.md
 ```
@@ -132,6 +136,38 @@ artifact of which 7 companies got picked. Writes:
 
 Also accepts `--synthetic` (see **Synthetic demo mode** below).
 
+**`classify_filings.py`** — the qualitative counterpart to `collect_edgar.py`.
+The mention *count* can't tell apart three very different things a filing does
+with the same word: **deploying** agentic AI in its own products, **exploring**
+it, or naming it as a **risk / competitive threat**. That distinction is the
+whole of Findings Part 3 — "banks moving first" (self + deploying) and "banks
+naming AI as a threat" (risk) look identical to a keyword tally but mean
+opposite things. This script reads the actual passages and classifies each on
+two axes — stance (deploying / exploring / risk / unclear) × subject (self /
+competitor / general) — using the same Gemini setup as `ai_assistant.py`, and
+is the one Part-3 read the deterministic pipeline structurally cannot produce.
+Two stages, split so a network failure or the LLM daily-quota limit in one
+doesn't cost the other, and each re-runnable alone:
+- **Stage A — extract** (no API key; needs efts.sec.gov + www.sec.gov):
+  full-text-searches the same 7 companies, downloads each matching filing, and
+  extracts the passage around every agentic-phrase hit. Writes
+  `data/raw/edgar_passages.csv` (cached — the classify stage reads this, so the
+  SEC download is paid once).
+- **Stage B — classify** (needs `GEMINI_API_KEY`; no SEC network): batches
+  passages **one LLM call per company** (Gemini's free tier is ~20 requests/day,
+  so per-passage calls would blow the budget), labelling each with a verbatim
+  quote that justifies the stance. Writes `data/raw/edgar_stance.csv`.
+
+```bash
+python classify_filings.py                # extract (if needed) then classify
+python classify_filings.py --extract-only # Stage A only, no API key
+python classify_filings.py --classify-only # Stage B only, from cached passages
+```
+
+The model is told to classify only from the passage in front of it, to quote
+the span it relied on, and to return "unclear" rather than guess — so every
+label traces back to a sentence a reader can re-check against the filing.
+
 **`build_index.py`** — the combination step. Loads the four collectors'
 real output (raises `FileNotFoundError` if any is missing — no automatic
 synthetic fallback; pass `--synthetic` to opt into placeholder demo data
@@ -174,6 +210,10 @@ python collect_edgar.py
 #     required by step 2 below)
 python collect_market_marketwide.py
 python collect_edgar_marketwide.py
+
+# 1c. optional: LLM stance classification of the agentic passages (Part 3),
+#     standalone. Stage A needs no key; Stage B needs GEMINI_API_KEY.
+python classify_filings.py
 
 # 2. build indices + run structural break tests -> output/fdi.csv, break_results.json
 #    (requires the three primary collectors above to have run first)
@@ -223,8 +263,15 @@ organised as the project's stages, left to right:
 3. **Turning Points** — PELT-detected turning points, each with a direction
    (slowdown / acceleration) and a stability score.
 4. **Robustness Checks** — the sector-ETF and market-wide EDGAR generalization
-   checks, the growth-benchmark macro-confound control, and the Gemini
-   robustness agent.
+   checks, the growth-benchmark macro-confound control, the agentic-language
+   **stance panel** (if `classify_filings.py` has been run): a per-company
+   deploying / exploring / risk count table covering every passage, then the
+   passages themselves with the verbatim filing quote behind each label —
+   defaulting to the clearest signals (deploying / risk, the two poles Part 3
+   contrasts) with the exploratory / unclear ones one click away, degrading to
+   a "not yet classified" hint if `edgar_stance.csv` is absent; and a
+   **"Run robustness agent"** button (`robustness_agent.py`) that runs a live
+   tool-using LLM red-team of the headline breaks (see below).
 5. **Converging Evidence** — every signal on one z-scored, smoothed scale, so
    the reader can see the independent sources agree on the two turning points.
 6. **Verdict & AI Assistant** — `VERDICT.md` + README findings, plus the Gemini
@@ -272,54 +319,34 @@ product. Three ways to supply an AI Studio key, in order of precedence:
 If no key is present through any of these, the app still runs normally —
 this section just shows the key prompt instead of the summary/chat tabs.
 
-### Robustness agent (Gemini)
+### Robustness agent (Gemini, tool-using)
 
-Below the AI Research Assistant, a "Robustness agent" section
-(`robustness_agent.py`) adds a genuinely different kind of AI feature: not
-another grounded-summary call, but a multi-step **tool-calling agent** that
-stress-tests this project's own headline structural breaks against the
-choice of parameters that produced them.
+The Robustness Checks tab has a **"Run robustness agent"** button backed by
+`robustness_agent.py`. Unlike the research assistant (a single grounded
+question-and-answer call), this is a genuine multi-step **tool-using agent**. It
+is given one tool — `probe(w1_weight, pelt_penalty, momentum_window)`, a thin
+wrapper around `build_index.py`'s own `build_indices()` / `run_break_analysis()`
+— and decides for itself, turn by turn, which parameter combinations to test,
+then judges whether each headline turning point is robust, fragile, or
+parameter-dependent. The dashboard shows its probe-by-probe trace (the exact
+settings it chose and the break dates each returned) and its final verdict, so
+you watch the exploration, not just the conclusion.
 
-It is given exactly one tool, `probe(w1_weight, pelt_penalty,
-momentum_window)` — a thin wrapper around `build_index.py`'s own
-`build_indices()`/`run_break_analysis()`, no separate statistics — and is
-told to: probe the project's own default parameters first (establishing
-what "the headline breaks" are, rather than having break dates hardcoded
-into its prompt), then decide for itself which further parameter
-combinations to test, within the same bounds `app.py`'s sliders already
-enforce (`w1_weight` 0–1, `pelt_penalty` 0.5–10, `momentum_window` 3–24
-months). It stops once it has enough evidence and writes a verdict: which
-breaks are **robust** (survive most reasonable settings), **fragile** (only
-appear at the exact reported parameters), or **parameter-dependent**
-(survive some directions but not others) — citing only the turning-point
-dates, directions, and stability scores each probe actually returned, never an
-invented number. (This is the qualitative, LLM-driven companion to the
-deterministic stability score `build_index.py` already computes.)
+It is the qualitative counterpart to the built-in **stability score**, which is
+a *deterministic* grid sweep over the same parameters — the agent samples that
+space with reasoning instead of exhaustively, so treat it as an illustrative
+red-team, not a replacement for the stability percentages. It can only probe
+within the same bounds the sidebar sliders expose (`w1_weight` 0–1,
+`pelt_penalty` 0.5–10, `momentum_window` 3–24) and is capped at a few probes so
+one run stays inside Gemini's free-tier quota. Also runnable from the CLI:
 
-Click "Run robustness agent" to see the loop happen live: an expander shows
-every probe it chose to run and what it found, followed by its written
-verdict below. This checks robustness of the **statistical method** to
-parameter choice — it is a validity check, not new evidence for or against
-the two-wave thesis, and its own parameter choices can never wander outside
-the sliders' existing ranges.
+```bash
+python robustness_agent.py               # red-team the real breaks
+python robustness_agent.py --synthetic   # red-team the synthetic-demo breaks
+```
 
-Uses the same Gemini API key as the assistant above (see setup steps
-above) — no separate key needed. One real constraint worth knowing: Gemini's
-free tier caps `gemini-3.6-flash` at roughly **20 requests per day per
-project** (confirmed empirically via a 429 response's quota detail, not
-documented with an exact number anywhere public), shared across this agent
-and the assistant above. Each agent run costs one request per probe plus a
-final verdict call, so the in-app probe budget slider defaults to a modest
-6 and caps at 8 to leave room for the rest of the day's usage. If the day's
-quota is already spent, the app fails fast with a clear message rather than
-retrying against a wall that won't come down for hours — see
-`robustness_agent.py`'s `_generate_with_retry()` for how it tells a
-transient per-minute rate limit (worth a short retry) apart from a
-per-day quota exhaustion (not worth retrying at all).
-
-Also runnable standalone: `python robustness_agent.py [--synthetic]`
-prints the full probe trace and verdict to the console and writes
-`output/robustness_report.md` (or `_synthetic.md`).
+Needs the same `GEMINI_API_KEY` as the research assistant above; the CLI also
+writes `output/robustness_report.md`.
 
 ## Synthetic demo mode
 
@@ -442,7 +469,19 @@ This is the single strongest evidence in the project that the thinness is early,
 
 The dramatic version of the Wave 2 thesis assumes banks are too encumbered by legacy infrastructure to use AI, leaving room for an AI-native challenger to repeat the Wave 1 playbook. That's not well supported here, and one data point leans the other way: **all five companies whose 2026 filings mention `agentic` language are already-established incumbents: JPM, HSBC, Barclays, PayPal, Block.** None are new AI-native entrants, because none exist in the sample. Neither neobank, SoFi or Nubank, shows `agentic` language even in 2026; the signal sits entirely with traditional banks and older, already-public embedded-finance players, the opposite of what an "AI-native upstart" thesis would predict.
 
-This is **consistent with** incumbents moving first, not **proof of** it. The dataset is public companies only, which structurally excludes any private AI-native challenger moving as fast or faster out of view. Absence of a counter-example in a sample that couldn't contain one either way is weak evidence. What actually tips the prediction toward "banks win again" is mostly outside this codebase: balance-sheet scale, existing compute/data budgets, and the fact that (per Part 1) banks currently have the profits to fund an AI build-out while several Wave 1 challengers were posting losses as recently as 2022-2023.
+**But the count alone overstates "incumbents moving first" — reading the passages splits it in two** (`classify_filings.py`, `data/raw/edgar_stance.csv`; stance panel in the dashboard's Data Collection tab). The mention count treats every `agentic` reference as one company "disclosing AI," which reads as leadership. Classifying each of the 19 passages by what it actually says — deploying it, exploring it, or naming it as a **risk / competitive threat** — shows the three traditional banks are not moving first at all:
+
+| Company | deploying | exploring | risk | dominant stance |
+|---|---|---|---|---|
+| JPMorgan | 0 | 0 | 3 | **risk** |
+| HSBC | 0 | 1 | 2 | **risk** |
+| Barclays | 0 | 0 | 5 | **risk** |
+| PayPal | 1 | 1 | 1 | **deploying** |
+| Block | 1 | 0 | 2 | **risk** |
+
+Every one of the big banks' agentic mentions is a **risk-factor disclosure** — JPMorgan's three are all in its risk section ("disintermediation of direct customer relationships if AI agents autonomously manage financial decisions"; cyber exposure; system failure), and Barclays' five read the same way ("liability, reputational harm, regulatory actions"; "expanded attack surface"). The only genuine *self + deploying* signals in the whole sample come from the two older **embedded-finance** players: PayPal ("more reasons to use PayPal and Venmo") and Block ("technology we developed, such as AI agents, available" under open-source licenses). So the honest read is not "incumbents are moving first" but **"older fintechs are deploying agentic AI; the big banks are, so far, disclosing it as a threat."** That is a sharper and more defensible claim than the raw count supports — and it slightly cuts against, rather than for, the "banks absorb the AI wave" prediction below.
+
+This is **consistent with** incumbents (of some kind) moving first, not **proof of** it. The dataset is public companies only, which structurally excludes any private AI-native challenger moving as fast or faster out of view. Absence of a counter-example in a sample that couldn't contain one either way is weak evidence. What actually tips the prediction toward "banks win again" is mostly outside this codebase: balance-sheet scale, existing compute/data budgets, and the fact that (per Part 1) banks currently have the profits to fund an AI build-out while several Wave 1 challengers were posting losses as recently as 2022-2023. The stance split above is a genuine caveat on that prediction: on the only direct evidence here of who is *building* vs. *fearing* agentic AI, it is the fintechs building and the banks flagging risk.
 
 ## Limitations
 
@@ -476,6 +515,14 @@ This is **consistent with** incumbents moving first, not **proof of** it. The da
 - **Findings Part 3 above (banks likely absorb the AI wave) is a prediction,
   explicitly labeled as such.** It should not be cited with the same
   confidence as the parts that describe what already happened.
+- **The stance split (deploying / exploring / risk) is an LLM judgment, not a
+  measured quantity.** `classify_filings.py` labels each passage with Gemini
+  and records the verbatim quote behind every label, so a reader can re-check
+  it against the filing — but it is one model's reading of 19 passages, not a
+  reproducible statistic, and could differ on a re-run or with a different
+  model. It is meant to add a qualitative axis the keyword count can't, not to
+  carry the same weight as the count itself. The `unclear` labels (2 of 19,
+  both Barclays) mark passages the model itself declined to call.
 
 ## Config
 

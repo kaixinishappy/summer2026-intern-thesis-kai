@@ -157,8 +157,8 @@ const Charts = (() => {
       return row ? row.mentions : 0;
     });
     const traces = [
-      { x: years, y: byQuery("agentic"), name: '"agentic" (Wave 2 signal)', type: "bar", marker: { color: cssVar("--wave2") } },
-      { x: years, y: byQuery("ai_broad"), name: '"artificial intelligence" (baseline)', type: "bar", marker: { color: cssVar("--series-violet") } },
+      { x: years, y: byQuery("agentic"), name: '"agentic"', type: "bar", marker: { color: cssVar("--wave2") } },
+      { x: years, y: byQuery("ai_broad"), name: '"artificial intelligence"', type: "bar", marker: { color: cssVar("--series-violet") } },
     ];
     Plotly.react(divId, traces, baseLayout({
       barmode: "group",

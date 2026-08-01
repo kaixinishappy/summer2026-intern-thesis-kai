@@ -221,6 +221,66 @@ p { line-height: 1.5; }
 :root[data-theme="dark"] .badge-warning, @media (prefers-color-scheme: dark) { }
 .badge-muted { color: var(--text-muted); border-color: var(--border); }
 
+/* ---- EDGAR agentic-language stance ---- */
+/* One colour per stance, reused by the badges, the stacked bar, and the
+   passage cards so a reader learns the mapping once (green = deploying,
+   amber = exploring, red = risk, grey = unclear) and it holds everywhere. */
+.stance-deploying { --stance-c: var(--status-good); }
+.stance-exploring { --stance-c: var(--status-warning); }
+.stance-risk      { --stance-c: var(--status-critical); }
+.stance-unclear   { --stance-c: var(--text-muted); }
+
+.stance-badge {
+  display: inline-flex; align-items: center;
+  font-size: 0.7rem; font-weight: 600; text-transform: capitalize;
+  padding: 0.14rem 0.5rem; border-radius: 999px;
+  color: var(--stance-c); border: 1px solid var(--stance-c);
+  background: color-mix(in srgb, var(--stance-c) 14%, transparent);
+}
+
+.stance-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; min-width: 90px; }
+.stance-bar span { background: var(--stance-c); }
+
+.stance-passages { display: grid; gap: 0.5rem; margin-top: 0.9rem; }
+.stance-passage {
+  border: 1px solid var(--border); border-left: 3px solid var(--stance-c);
+  border-radius: 6px; padding: 0.55rem 0.7rem; font-size: 0.82rem;
+}
+.stance-passage .stance-passage-head {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.3rem;
+}
+.stance-passage .stance-passage-head .muted { color: var(--text-muted); font-size: 0.76rem; }
+.stance-passage blockquote {
+  margin: 0.2rem 0 0.25rem; padding-left: 0.6rem;
+  border-left: 2px solid var(--border); color: var(--text-secondary);
+}
+.stance-passage .stance-rationale { color: var(--text-muted); font-size: 0.76rem; }
+
+.stance-toggle {
+  margin-top: 0.6rem; padding: 0.3rem 0.7rem;
+  font-size: 0.76rem; font-weight: 600;
+  color: var(--text-secondary); background: var(--surface-1);
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+}
+.stance-toggle:hover { border-color: var(--text-muted); }
+
+/* ---- robustness agent trace ---- */
+.agent-probes-head { font-size: 0.76rem; margin: 0.7rem 0 0.4rem; }
+.agent-probes { display: grid; gap: 0.5rem; }
+.agent-probe {
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.5rem 0.7rem; font-size: 0.82rem;
+}
+.agent-probe-head { margin-bottom: 0.3rem; }
+.agent-probe-head .muted { color: var(--text-muted); font-size: 0.76rem; }
+.agent-series { display: flex; gap: 0.5rem; font-size: 0.78rem; }
+.agent-series-name {
+  display: inline-block; min-width: 3.2rem; font-weight: 600;
+  color: var(--text-secondary);
+}
+.agent-verdict-title { margin: 1rem 0 0.4rem; font-size: 0.92rem; }
+.agent-verdict-body { font-size: 0.9rem; }
+
 /* ---- stat tiles ---- */
 
 .stat-row {
@@ -303,13 +363,6 @@ td.sig-no { color: var(--text-muted); }
   flex: 1; padding: 0.55rem 0.75rem; border-radius: 8px;
   border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
 }
-
-/* ---- robustness agent trace ---- */
-
-.probe-entry { border-top: 1px solid var(--gridline); padding: 0.6rem 0; font-size: 0.83rem; }
-.probe-entry:first-child { border-top: none; }
-.probe-params { color: var(--text-secondary); }
-.probe-breaks { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: 0.3rem; color: var(--text-muted); font-size: 0.8rem; }
 
 /* ---- watermark note ---- */
 
