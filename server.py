@@ -28,7 +28,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -461,13 +461,31 @@ class AIChatRequest(AIContextParams):
     history: list[dict] = []
 
 
-def _build_context(p: AIContextParams) -> str:
+def _build_context(p: AIContextParams) -> tuple[str, bool]:
+    """Returns (grounding context, used_synthetic). used_synthetic is surfaced
+    so the chat tool loop recomputes on the same real-vs-synthetic data the
+    context describes."""
     forced_synthetic = p.synthetic or not REAL_DATA_AVAILABLE
     res = build_indices(weight_w1=p.w1_weight, use_synthetic=forced_synthetic)
     breaks = run_break_analysis(res, momentum_window=p.momentum_window, pelt_penalty=p.pelt_penalty)
-    return ai_assistant.build_data_context(
+    context = ai_assistant.build_data_context(
         res.df, breaks, p.w1_weight, p.pelt_penalty, p.momentum_window, res.used_synthetic
     )
+    return context, res.used_synthetic
+
+
+# Streamed responses use Server-Sent Events so the browser can render tokens as
+# they arrive. Pre-flight work (API key, context build) happens before the
+# StreamingResponse so those failures return a normal HTTP error; anything that
+# goes wrong once streaming has started is delivered as an SSE "error" event
+# (see ai_assistant's stream_* generators).
+_SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+
+def _sse(events) -> str:
+    for event, data in events:
+        yield f"event: {event}\ndata: {json.dumps(data)}\n\n"
+    yield "event: done\ndata: {}\n\n"
 
 
 @app.post("/api/ai/summary")
@@ -475,11 +493,11 @@ def ai_summary(p: AIContextParams):
     api_key = _resolve_api_key(p.api_key)
     if not api_key:
         raise HTTPException(status_code=400, detail="No Gemini API key configured.")
-    context = _build_context(p)
-    try:
-        return {"summary": ai_assistant.generate_summary(context, api_key)}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    context, _ = _build_context(p)
+    return StreamingResponse(
+        _sse(ai_assistant.stream_summary(context, api_key)),
+        media_type="text/event-stream", headers=_SSE_HEADERS,
+    )
 
 
 @app.post("/api/ai/chat")
@@ -487,20 +505,22 @@ def ai_chat(req: AIChatRequest):
     api_key = _resolve_api_key(req.api_key)
     if not api_key:
         raise HTTPException(status_code=400, detail="No Gemini API key configured.")
-    context = _build_context(req)
-    try:
-        answer = ai_assistant.answer_question(req.question, context, api_key, history=req.history)
-        return {"answer": answer}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=str(e))
+    context, used_synthetic = _build_context(req)
+    return StreamingResponse(
+        _sse(ai_assistant.stream_chat(
+            req.question, context, api_key,
+            history=req.history, use_synthetic=used_synthetic,
+        )),
+        media_type="text/event-stream", headers=_SSE_HEADERS,
+    )
 
 
 # --------------------------------------------------------------------------- #
 # Robustness agent -- the tool-using agent from robustness_agent.py, exposed so
-# the Robustness tab can run it live and show its probe-by-probe trace + final
+# the Robustness tab can run it live and show its check-by-check trace + final
 # verdict. Unlike the stability score (a deterministic grid sweep), this is the
 # qualitative, exploratory version: the model chooses which parameter settings
-# to probe. Synchronous (the run is a handful of LLM calls); the frontend shows
+# to check. Synchronous (the run is a handful of LLM calls); the frontend shows
 # a spinner. Capped at a few steps so one run can't drain the free-tier quota.
 # --------------------------------------------------------------------------- #
 
@@ -516,7 +536,7 @@ def run_robustness_agent(req: RobustnessAgentRequest):
     if not api_key:
         raise HTTPException(status_code=400, detail="No Gemini API key configured.")
     # Force synthetic when real data is missing, exactly like _build_context, so
-    # the agent probes the same data the rest of the dashboard is showing.
+    # the agent checks the same data the rest of the dashboard is showing.
     use_synthetic = req.synthetic or not REAL_DATA_AVAILABLE
     # Bound max_steps to the agent's own default so a hand-crafted request can't
     # ask for an unbounded (quota-draining) run.

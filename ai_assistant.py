@@ -14,32 +14,45 @@ Wave 2 = early/thin evidence, "banks win the AI wave" = a labeled prediction,
 not a finding). This is what stops it from inventing statistics or
 overclaiming beyond what the pipeline actually found.
 
-Two entry points, both STATELESS -- every call rebuilds the data context
-fresh rather than relying on a server-side chat session, so an answer always
-reflects whatever the sliders are set to *right now*, even if they changed
-since the last question:
+All entry points are STATELESS -- every call rebuilds the data context fresh
+rather than relying on a server-side chat session, so an answer always reflects
+whatever the sliders are set to *right now*, even if they changed since the
+last question:
 
     build_data_context(df, breaks, w1_weight, pelt_penalty,
                         momentum_window, used_synthetic) -> str
-    generate_summary(context, api_key)                  -> str
-    answer_question(question, context, api_key, history) -> str
+    stream_summary(context, api_key)                     -> yields (event, data)
+    stream_chat(question, context, api_key, history,     -> yields (event, data)
+                use_synthetic)
+    generate_summary(context, api_key)                   -> str   (non-stream)
+    answer_question(question, context, api_key, history) -> str   (non-stream)
+
+The two stream_* generators yield (event, data) tuples the server turns into
+Server-Sent Events, so answers type out live in the browser instead of landing
+in one blob. stream_chat additionally gives the model a `recompute` tool (the
+same build_indices()/run_break_analysis() wrapper the robustness agent uses),
+so it can answer what-if questions -- "what if Wave 2 were weighted 70%?" --
+by actually recomputing the index at those parameters rather than being stuck
+with the single snapshot the sliders happen to be at.
+
+The low-level Gemini plumbing (client, model id, 429 backoff, timeout) lives in
+gemini_client.py, shared with robustness_agent.py; only the prompts, context
+assembly, and tool wiring are here.
 
 Needs:
     pip install google-genai
     a Gemini API key -- free, no billing card required -- from
     https://ai.google.dev (the "Get API key" / AI Studio flow specifically;
     a key issued through Google Cloud Console / Vertex AI instead is a
-    different product and does require billing -- see below)
+    different product and does require billing).
 
-Originally built against Gemini, switched to Groq after an earlier Gemini key
-returned quota limit: 0 without a funded Google Cloud billing account, then
-switched back to Gemini once it became clear that failure was specific to
-Cloud Console/Vertex AI-issued keys -- a key from ai.google.dev's AI Studio
-flow is a separate, genuinely free product with no card requirement. Groq
-remains a fine alternative if this key ever hits the same wall; see git
-history for the Groq version of _get_client()/_generate() if you need to
-switch back. build_data_context() and the prompt-building logic are
-provider-agnostic -- only _get_client()/_generate() below are Gemini-specific.
+Originally built against Gemini, briefly switched to Groq after an earlier
+Gemini key returned quota limit: 0 without a funded Google Cloud billing
+account, then switched back once it became clear that failure was specific to
+Cloud Console/Vertex AI-issued keys -- an ai.google.dev AI Studio key is a
+separate, genuinely free product. Groq remains a fine alternative if this key
+ever hits the same wall; the context/prompt-building logic here is
+provider-agnostic -- only gemini_client.py is Gemini-specific.
 """
 
 from __future__ import annotations
@@ -49,25 +62,34 @@ import os
 import pandas as pd
 
 from build_index import FINTECH_TICKERS, LEGACY_TICKERS, WAVE1_TREND_TERMS, WAVE2_TREND_TERMS
+from gemini_client import (
+    GEMINI_MODEL,
+    generate_stream_with_retry,
+    generate_with_retry,
+    get_client,
+)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-# gemini-3.6-flash: Google's current general-purpose flash model as of this
-# writing (ai.google.dev/gemini-api docs). Unlike the Groq version of this
-# file, this hasn't been load-tested against a real key's free-tier rate
-# limits yet -- Google doesn't publish exact free-tier RPM/TPM numbers
-# anywhere public, only in the AI Studio dashboard once a key exists (same
-# way Groq's limits had to be checked empirically via response headers, see
-# build_data_context()'s comment on why README.md still isn't inlined into
-# CONTEXT). If this model 429s or is deprecated, check
-# https://aistudio.google.com/rate-limit and swap here -- avoid models that
-# do their own tool use (web search, code execution) for the same reason the
-# Groq version avoided groq/compound: it would let answers drift from
-# CONTEXT, which is the whole point of rule 1 below.
-GEMINI_MODEL = "gemini-3.6-flash"
+# Sampling temperature for the assistant. Low but not zero: these are
+# analytical/interpretive answers where we want steady, grounded phrasing, not
+# creative variance -- but a hard 0 tends to make the prose stilted and
+# repetitive across turns.
+TEMPERATURE = 0.3
+
+# How many recompute (what-if) tool calls one chat answer may make before the
+# tool is withdrawn and the model must answer from what it has. Bounds the
+# free-tier daily quota (shared with the summary and the robustness agent, see
+# gemini_client.GEMINI_MODEL) and keeps one question from fanning out into a
+# grid search -- that's the robustness agent's job, not the chat assistant's.
+MAX_RECOMPUTE_CALLS = 4
+# Hard ceiling on model<->tool round trips, so a misbehaving model that keeps
+# emitting tool calls can never loop forever.
+MAX_CHAT_TURNS = 8
 
 SYSTEM_INSTRUCTIONS = """\
-You are a research assistant embedded in a Streamlit app for a thesis titled
+You are a research assistant embedded in a web dashboard (a FastAPI backend
+with a plain HTML/JS frontend) for a thesis titled
 "Fintech Two-Wave Disruption Index." The thesis asks whether fintech
 disruption of traditional banking (Wave 1: payments, neobanks, embedded
 finance, ~2010-2021) has already run its course, and whether a second,
@@ -227,36 +249,50 @@ def _recent_months_table(df: pd.DataFrame, n: int = 12) -> str:
     return "\n".join(rows)
 
 
-def build_data_context(df: pd.DataFrame, breaks: dict, w1_weight: float,
-                        pelt_penalty: float, momentum_window: int,
-                        used_synthetic: bool) -> str:
-    """Assembles the grounding context block from the live-computed
-    IndexResult.df and run_break_analysis() output -- the same objects
-    app.py already recomputes on every slider change -- plus VERDICT.md (the
-    verdict + bottom line) and README.md's Findings section (the detailed
-    Part 1/2/3 evidence), both read fresh off disk, so the assistant can
-    answer written-verdict and evidence questions, not just live-number
-    lookups. Only the Findings section of README.md is extracted rather than
-    the whole file -- the rest (install steps, repo layout, quick-start
-    commands) isn't relevant to grounding and would only add tokens; see
-    _read_findings_section(). The remaining methodology facts (tickers,
-    keywords, sub-index formulas) are covered compactly by
-    _component_signal_lines() below instead."""
+def _static_reference() -> str:
+    """The parameter-independent half of the context: VERDICT.md and README.md's
+    Findings section, read fresh off disk. Identical for every call within a
+    session regardless of slider position, so build_data_context() puts it
+    FIRST -- Gemini's implicit prefix caching keys on the longest shared prefix
+    across requests, and keeping this large, stable block ahead of the live
+    numbers (which change on every slider move and every turn) is what lets that
+    caching actually hit and cut repeat cost/latency."""
+    return f"""\
+--- WRITTEN VERDICT (VERDICT.md, live off disk, current as of this session) ---
+STATIC -- written at the default 50/50 weight; may disagree with the LIVE
+NUMBERS below if the sliders moved. Its own labeled predictions (e.g. "banks
+likely absorb the AI wave") are predictions, not findings.
+
+{_read_project_doc("VERDICT.md")}
+
+--- DETAILED FINDINGS (README.md's Findings section, live off disk, current as of this session) ---
+STATIC, same default-50/50-weight snapshot as VERDICT.md above -- the price,
+profitability, structural-break, and EDGAR evidence tables behind the verdict
+(Parts 1-3)."""
+
+
+def _live_numbers(df: pd.DataFrame, breaks: dict, w1_weight: float,
+                  pelt_penalty: float, momentum_window: int,
+                  used_synthetic: bool) -> str:
+    """The parameter-dependent half of the context: everything computed from
+    the live IndexResult.df / run_break_analysis() output at the current slider
+    settings. Changes on every slider move, so it comes AFTER _static_reference()
+    (see that function's note on implicit caching)."""
     start, end = df.index.min(), df.index.max()
     latest = df.iloc[-1]
     peak_w1_date = df["wave1"].idxmax()
     peak_w2_date = df["wave2"].idxmax()
 
-    parts = []
+    notice = ""
     if used_synthetic:
-        parts.append(
+        notice = (
             "*** SYNTHETIC DEMO DATA ACTIVE *** -- everything below is fabricated "
             "placeholder data (two-wave shape baked in by construction), NOT real "
-            "evidence. Any answer must say this explicitly.\n"
+            "evidence. Any answer must say this explicitly.\n\n"
         )
 
-    parts.append(f"""\
-CURRENT PARAMETERS
+    return f"""\
+{notice}CURRENT PARAMETERS
   Wave 1 weight in composite FDI: {w1_weight:.2f} (Wave 2 weight: {1 - w1_weight:.2f})
   PELT break-detection penalty: {pelt_penalty}
   Momentum window: {momentum_window} months
@@ -280,53 +316,68 @@ UNDERLYING COMPONENT SIGNALS (what each sub-index is actually built from)
 {_component_signal_lines(df)}
 
 RECENT MONTHLY VALUES (last 12 months, z-scored except where noted otherwise above)
-{_recent_months_table(df)}
-
---- WRITTEN VERDICT (VERDICT.md, live off disk, current as of this session) ---
-STATIC -- written at the default 50/50 weight; may disagree with CURRENT
-PARAMETERS/LATEST VALUES above if sliders moved. Its own labeled predictions
-(e.g. "banks likely absorb the AI wave") are predictions, not findings.
-
-{_read_project_doc("VERDICT.md")}
-
---- DETAILED FINDINGS (README.md's Findings section, live off disk, current as of this session) ---
-STATIC, same default-50/50-weight snapshot as VERDICT.md above -- the price,
-profitability, structural-break, and EDGAR evidence tables behind the
-verdict (Parts 1-3).
-
-{_read_findings_section()}""")
-
-    return "\n".join(parts)
+{_recent_months_table(df)}"""
 
 
-def _get_client(api_key: str):
-    try:
-        from google import genai
-    except ImportError as e:
-        raise RuntimeError(
-            "google-genai is not installed. Run: pip install google-genai"
-        ) from e
-    return genai.Client(api_key=api_key)
+def build_data_context(df: pd.DataFrame, breaks: dict, w1_weight: float,
+                       pelt_penalty: float, momentum_window: int,
+                       used_synthetic: bool) -> str:
+    """Assembles the grounding context: the static reference material (VERDICT.md
+    + README.md's Findings, read fresh off disk) followed by the live-computed
+    numbers at the current slider settings. Static-first ordering is deliberate;
+    see _static_reference(). Only the Findings section of README.md is extracted
+    rather than the whole file -- the rest (install steps, repo layout,
+    quick-start commands) isn't relevant to grounding and would only add tokens;
+    see _read_findings_section(). The remaining methodology facts (tickers,
+    keywords, sub-index formulas) are covered compactly by _live_numbers()'s
+    component-signal lines instead."""
+    return (
+        "REFERENCE MATERIAL (static this session):\n"
+        f"{_static_reference()}\n\n"
+        "============================================================\n"
+        "LIVE NUMBERS (reflect the CURRENT slider settings right now):\n\n"
+        f"{_live_numbers(df, breaks, w1_weight, pelt_penalty, momentum_window, used_synthetic)}"
+    )
 
 
-def _generate(prompt: str, api_key: str) -> str:
-    client = _get_client(api_key)
-    try:
-        interaction = client.interactions.create(
-            model=GEMINI_MODEL,
-            system_instruction=SYSTEM_INSTRUCTIONS,
-            input=prompt,
-        )
-        return interaction.output_text
-    except Exception as e:
-        raise RuntimeError(str(e)) from e
+# What-if tool for the chat assistant: the same index recompute the robustness
+# agent uses, exposed so a question like "what if Wave 2 were weighted 70%?" is
+# answered by actually recomputing rather than guessing. Named "recompute"
+# (vs the agent's "check") only so the trace reads naturally in the chat UI; it
+# dispatches to the identical function.
+RECOMPUTE_FUNCTION_DECLARATION = {
+    "name": "recompute",
+    "description": (
+        "Recompute the Wave 1 / Wave 2 / FDI sub-indices and re-detect turning "
+        "points at a DIFFERENT set of parameters than the ones in LIVE NUMBERS -- "
+        "use this to answer any what-if question about changing the Wave 1 "
+        "weight, PELT penalty, or momentum window, instead of guessing what would "
+        "change. Returns the actual turning-point dates, directions, and "
+        "stability scores at those parameters; only cite numbers it returns."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "w1_weight": {
+                "type": "number",
+                "description": "Composite FDI blend weight for Wave 1, 0.0-1.0.",
+            },
+            "pelt_penalty": {
+                "type": "number",
+                "description": "PELT break-detection penalty, 0.5-10.0 (higher = fewer breaks).",
+            },
+            "momentum_window": {
+                "type": "integer",
+                "description": "Momentum window in months, 3-24.",
+            },
+        },
+        "required": ["w1_weight", "pelt_penalty", "momentum_window"],
+    },
+}
 
 
-def generate_summary(context: str, api_key: str) -> str:
-    """One executive-summary paragraph reflecting the CURRENT parameter
-    settings -- not a reuse of VERDICT.md's static text, which was written
-    at the default 50/50 weight."""
-    prompt = f"""CONTEXT:
+def _summary_prompt(context: str) -> str:
+    return f"""CONTEXT:
 {context}
 
 Write a 150-220 word executive-summary paragraph interpreting the CONTEXT
@@ -335,29 +386,161 @@ settings honestly -- if breaks are weak, absent, or different from what a
 default 50/50 weighting would show, say so rather than reproducing a
 generic verdict. Do not pad with disclaimers beyond what's needed; state the
 finding, then the one or two caveats that materially affect it."""
-    return _generate(prompt, api_key)
 
 
-def answer_question(question: str, context: str, api_key: str,
-                    history: list[dict] | None = None) -> str:
-    """Stateless Q&A: rebuilds the full prompt (system instructions + fresh
-    context + prior turns + new question) on every call, rather than using a
-    persistent chat session -- so an answer always reflects whatever the
-    sliders are set to right now, even if they changed since the last
-    question in this conversation."""
+def _chat_prompt(question: str, context: str, history: list[dict] | None) -> str:
     history_text = ""
     if history:
         recent = history[-6:]  # keep the prompt small
         turns = [f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
-                for m in recent]
+                 for m in recent]
         history_text = "\nPRIOR CONVERSATION (for context only, may reflect " \
                        "different parameter settings than CONTEXT above):\n" + \
                        "\n".join(turns) + "\n"
 
-    prompt = f"""CONTEXT:
+    return f"""CONTEXT:
 {context}
 {history_text}
+If the question asks what would happen at DIFFERENT parameters than the LIVE
+NUMBERS above (a different Wave 1 weight, PELT penalty, or momentum window),
+call the `recompute` tool with those parameters and base your answer on what it
+returns -- do not guess. For anything answerable from CONTEXT as-is, just
+answer directly.
+
 New question: {question}
 
 Answer:"""
-    return _generate(prompt, api_key)
+
+
+def _config(with_tools: bool):
+    """Builds the GenerateContentConfig, optionally with the recompute tool.
+    Imported lazily so importing this module never requires google-genai (only
+    actually calling the model does)."""
+    from google.genai import types
+    tools = None
+    if with_tools:
+        tools = [types.Tool(function_declarations=[
+            types.FunctionDeclaration(**RECOMPUTE_FUNCTION_DECLARATION)
+        ])]
+    return types.GenerateContentConfig(
+        system_instruction=SYSTEM_INSTRUCTIONS,
+        temperature=TEMPERATURE,
+        tools=tools,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Streaming entry points -- yield (event, data) tuples the server relays as
+# Server-Sent Events. Events: ("token", {"text": ...}) for answer text as it
+# arrives, ("tool", {...}) for a recompute call the model made, and
+# ("error", {"message": ...}) if generation fails after the stream has already
+# started (pre-flight errors -- no key, bad context -- are raised before the
+# stream opens so the server can return a normal HTTP error instead).
+# --------------------------------------------------------------------------- #
+
+def stream_summary(context: str, api_key: str):
+    """Executive summary, streamed token by token."""
+    client = get_client(api_key)
+    try:
+        for chunk in generate_stream_with_retry(
+            client, model=GEMINI_MODEL, contents=_summary_prompt(context),
+            config=_config(with_tools=False),
+        ):
+            if getattr(chunk, "text", None):
+                yield ("token", {"text": chunk.text})
+    except Exception as e:
+        yield ("error", {"message": str(e)})
+
+
+def stream_chat(question: str, context: str, api_key: str,
+                history: list[dict] | None = None, use_synthetic: bool = False):
+    """Streamed Q&A with the recompute what-if tool. Runs a model<->tool loop:
+    each turn is streamed, its answer text relayed as it arrives; if the model
+    instead asks to recompute, the call is run and fed back and the loop
+    continues. The tool is withdrawn after MAX_RECOMPUTE_CALLS so one question
+    can't fan out into a grid search or drain the daily quota."""
+    from google.genai import types
+    from robustness_agent import check as recompute_index
+
+    client = get_client(api_key)
+    contents = [types.Content(role="user", parts=[
+        types.Part(text=_chat_prompt(question, context, history))
+    ])]
+    recompute_calls = 0
+
+    try:
+        for _ in range(MAX_CHAT_TURNS):
+            tools_left = recompute_calls < MAX_RECOMPUTE_CALLS
+            acc_text = ""
+            fn_parts = []
+            calls = []
+            for chunk in generate_stream_with_retry(
+                client, model=GEMINI_MODEL, contents=contents,
+                config=_config(with_tools=tools_left),
+            ):
+                cand = chunk.candidates[0] if chunk.candidates else None
+                if not cand or not cand.content or not cand.content.parts:
+                    continue
+                for part in cand.content.parts:
+                    if getattr(part, "function_call", None):
+                        fn_parts.append(part)
+                        calls.append(part.function_call)
+                    elif getattr(part, "text", None):
+                        acc_text += part.text
+                        yield ("token", {"text": part.text})
+
+            # Thread this model turn back into the conversation so any tool
+            # responses below attach to the right call.
+            model_parts = ([types.Part(text=acc_text)] if acc_text else []) + fn_parts
+            if model_parts:
+                contents.append(types.Content(role="model", parts=model_parts))
+
+            if not calls:
+                return  # model answered with text -- already streamed above
+
+            response_parts = []
+            for fc in calls:
+                recompute_calls += 1
+                try:
+                    result = recompute_index(use_synthetic=use_synthetic, **fc.args)
+                    yield ("tool", {"params": result["params"], "result": result["series"]})
+                    response_parts.append(types.Part.from_function_response(
+                        name=fc.name, response={"result": result}))
+                except Exception as e:
+                    yield ("tool", {"params": dict(fc.args), "error": str(e)})
+                    response_parts.append(types.Part.from_function_response(
+                        name=fc.name, response={"error": str(e)}))
+            contents.append(types.Content(role="user", parts=response_parts))
+    except Exception as e:
+        yield ("error", {"message": str(e)})
+
+
+# --------------------------------------------------------------------------- #
+# Non-streaming entry points -- kept for the CLI / tests and any caller that
+# just wants the finished string. Same prompts as the streaming versions.
+# --------------------------------------------------------------------------- #
+
+def generate_summary(context: str, api_key: str) -> str:
+    """One executive-summary paragraph reflecting the CURRENT parameter
+    settings -- not a reuse of VERDICT.md's static text, which was written at
+    the default 50/50 weight."""
+    client = get_client(api_key)
+    response = generate_with_retry(
+        client, model=GEMINI_MODEL, contents=_summary_prompt(context),
+        config=_config(with_tools=False),
+    )
+    return (response.text or "").strip()
+
+
+def answer_question(question: str, context: str, api_key: str,
+                    history: list[dict] | None = None) -> str:
+    """Non-streaming, no-tool Q&A: rebuilds the full prompt fresh on every call
+    (stateless), so an answer always reflects whatever the sliders are set to
+    right now. For the tool-enabled, streamed version the UI uses, see
+    stream_chat()."""
+    client = get_client(api_key)
+    response = generate_with_retry(
+        client, model=GEMINI_MODEL, contents=_chat_prompt(question, context, history),
+        config=_config(with_tools=False),
+    )
+    return (response.text or "").strip()

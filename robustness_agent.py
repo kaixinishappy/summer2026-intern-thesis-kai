@@ -6,7 +6,7 @@ Index's structural-break findings.
 
 Unlike ai_assistant.py (a single-shot, stateless "here's the live context,
 answer the question" call), this is a genuine multi-step tool-using agent: it
-is given one tool -- probe(w1_weight, pelt_penalty, momentum_window), a thin
+is given one tool -- check(w1_weight, pelt_penalty, momentum_window), a thin
 wrapper around build_index.py's own build_indices()/run_break_analysis() --
 and decides for itself, turn by turn, which parameter combinations to test to
 see whether this project's headline structural breaks survive across the
@@ -32,7 +32,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import time
 from dataclasses import dataclass, field
 
 from build_index import (
@@ -43,13 +42,9 @@ from build_index import (
     build_indices,
     run_break_analysis,
 )
+from gemini_client import GEMINI_MODEL, generate_with_retry, get_client
 
-# Same GEMINI_MODEL as ai_assistant.py, kept in sync manually since the two
-# files pick their model independently (see ai_assistant.py's comment on
-# where to check current rate limits if this needs to change).
-GEMINI_MODEL = "gemini-3.6-flash"
-
-# Mirrors app.py's sidebar slider ranges exactly, so a probe the agent runs
+# Mirrors app.py's sidebar slider ranges exactly, so a check the agent runs
 # is always a setting a human could actually have chosen live in the app --
 # never a value nobody would defend.
 PARAM_BOUNDS = {
@@ -63,8 +58,8 @@ PARAM_BOUNDS = {
 # via a 429's QuotaFailure detail; not documented with an exact number
 # anywhere public), shared with ai_assistant.py's summary/chat calls in the
 # same app. Kept small so one run doesn't spend most of the day's budget --
-# see _generate_with_retry()'s daily-quota fast-fail below for what happens
-# if it's already exhausted when this runs.
+# see gemini_client.generate_with_retry()'s daily-quota fast-fail for what
+# happens if it's already exhausted when this runs.
 MAX_STEPS_DEFAULT = 6
 
 SYSTEM_INSTRUCTIONS = """\
@@ -83,7 +78,7 @@ fragile (they only appear at one specific setting). This complements the
 project's own built-in stability score -- you are the qualitative, exploratory
 version of the same check.
 
-You have one tool, `probe`, which actually recomputes the index and turning
+You have one tool, `check`, which actually recomputes the index and turning
 points at whatever parameters you choose and returns the real turning-point
 dates, directions, and stability scores for wave1, wave2, and FDI. Valid ranges:
   w1_weight: 0.0-1.0 (note: only affects the FDI composite, not wave1/wave2
@@ -92,11 +87,11 @@ dates, directions, and stability scores for wave1, wave2, and FDI. Valid ranges:
   momentum_window: 3-24 (months)
 
 Procedure:
-1. First call probe with the project's own default parameters (given in the
+1. First call check with the project's own default parameters (given in the
    task message below) to establish the baseline breaks -- treat whatever
    break dates that call returns as "the headline breaks" you are testing the
    robustness of. Do not assume specific dates in advance.
-2. Then choose further probes yourself -- vary one or more parameters away
+2. Then choose further checks yourself -- vary one or more parameters away
    from the defaults, in directions you think are most likely to make a
    reported break appear or disappear -- to see whether the same turning-point
    dates (roughly) and their directions survive.
@@ -106,16 +101,16 @@ Procedure:
    when you are told your step budget is exhausted.
 4. When you stop calling the tool, write a final verdict as plain text (no
    further tool calls). For each headline break: state whether it is robust,
-   fragile, or parameter-dependent, and cite the specific probe results
+   fragile, or parameter-dependent, and cite the specific check results
    (parameters + turning-point dates/directions/stability) that support that
    call. Only cite numbers that
-   actually came back from a probe call -- never invent or estimate a result
+   actually came back from a check call -- never invent or estimate a result
    you didn't get from the tool. Be concise and specific; this will be read
    by someone deciding how much to trust the thesis's headline finding.
 """
 
-PROBE_FUNCTION_DECLARATION = {
-    "name": "probe",
+CHECK_FUNCTION_DECLARATION = {
+    "name": "check",
     "description": (
         "Recompute the Wave 1 / Wave 2 / FDI sub-indices and detect turning "
         "points (PELT change-point detection) at the given parameters. Returns "
@@ -158,11 +153,11 @@ def _clamp(name: str, value: float):
     return max(lo, min(hi, value))
 
 
-def probe(w1_weight: float, pelt_penalty: float, momentum_window: int,
+def check(w1_weight: float, pelt_penalty: float, momentum_window: int,
           use_synthetic: bool = False) -> dict:
     """The agent's one tool. Reuses build_index.py's own functions directly
     -- no duplicated statistics -- and clamps every argument into the same
-    bounds app.py's sliders enforce, so a probe can never land outside a
+    bounds app.py's sliders enforce, so a check can never land outside a
     setting a human could actually have chosen."""
     w1_weight = _clamp("w1_weight", float(w1_weight))
     pelt_penalty = _clamp("pelt_penalty", float(pelt_penalty))
@@ -195,79 +190,10 @@ def probe(w1_weight: float, pelt_penalty: float, momentum_window: int,
     return out
 
 
-def _get_client(api_key: str):
-    try:
-        from google import genai
-    except ImportError as e:
-        raise RuntimeError(
-            "google-genai is not installed. Run: pip install google-genai"
-        ) from e
-    return genai.Client(api_key=api_key)
-
-
-def _retry_delay_seconds(exc, default: float = 15.0) -> float:
-    """Reads the server's own suggested RetryInfo.retryDelay off a 429
-    response rather than guessing a backoff -- Gemini's free tier also caps
-    gemini-3.6-flash on a short per-minute window on top of the per-day one
-    _is_daily_quota_exhausted() below checks for (see ai_assistant.py's
-    comment on checking AI Studio for current limits), and this agent's tool
-    loop can easily make more calls than that per-minute cap in one run."""
-    try:
-        details = exc.details.get("error", {}).get("details", [])
-        for d in details:
-            if str(d.get("@type", "")).endswith("RetryInfo"):
-                delay = str(d.get("retryDelay", ""))
-                if delay.endswith("s"):
-                    return float(delay[:-1])
-    except Exception:
-        pass
-    return default
-
-
-def _is_daily_quota_exhausted(exc) -> bool:
-    """A per-minute rate limit is worth sleeping through (see
-    _retry_delay_seconds above); a per-DAY quota is not -- retryDelay on that
-    error is not a meaningful countdown to reset, so blindly sleeping and
-    retrying just burns wall-clock time for a wall that won't come down for
-    hours. Detected via the QuotaFailure violation's quotaId, which names the
-    quota bucket that got exhausted (e.g.
-    'GenerateRequestsPerDayPerProjectPerModel-FreeTier' vs. a per-minute one)."""
-    try:
-        details = exc.details.get("error", {}).get("details", [])
-        for d in details:
-            if str(d.get("@type", "")).endswith("QuotaFailure"):
-                for v in d.get("violations", []):
-                    if "PerDay" in str(v.get("quotaId", "")):
-                        return True
-    except Exception:
-        pass
-    return False
-
-
-def _generate_with_retry(client, *, model: str, contents, config, max_retries: int = 5):
-    from google.genai import errors
-    for attempt in range(max_retries + 1):
-        try:
-            return client.models.generate_content(model=model, contents=contents, config=config)
-        except errors.ClientError as e:
-            if getattr(e, "code", None) != 429:
-                raise
-            if _is_daily_quota_exhausted(e):
-                raise RuntimeError(
-                    f"Gemini's free-tier daily request quota for {model} is "
-                    "exhausted for today (shared with the AI research "
-                    "assistant above). Retrying won't help until it resets -- "
-                    "see https://ai.google.dev/gemini-api/docs/rate-limits."
-                ) from e
-            if attempt == max_retries:
-                raise
-            time.sleep(_retry_delay_seconds(e) + 1.0)
-
-
 def run_agent(api_key: str, use_synthetic: bool = False,
               max_steps: int = MAX_STEPS_DEFAULT) -> AgentResult:
     """Drives the manual tool-calling loop: send messages -> if the model
-    asked for a probe, run it and feed the result back -> repeat, until the
+    asked for a check, run it and feed the result back -> repeat, until the
     model answers with plain text (its verdict) or max_steps is hit.
 
     Driven manually rather than via the SDK's automatic-function-calling
@@ -277,9 +203,9 @@ def run_agent(api_key: str, use_synthetic: bool = False,
     """
     from google.genai import types
 
-    client = _get_client(api_key)
+    client = get_client(api_key)
     tool = types.Tool(function_declarations=[
-        types.FunctionDeclaration(**PROBE_FUNCTION_DECLARATION)
+        types.FunctionDeclaration(**CHECK_FUNCTION_DECLARATION)
     ])
     config = types.GenerateContentConfig(
         system_instruction=SYSTEM_INSTRUCTIONS,
@@ -292,7 +218,7 @@ Project defaults to test robustness against:
   pelt_penalty = {DEFAULT_PELT_PENALTY}
   momentum_window = {DEFAULT_MOMENTUM_WINDOW}
 
-You have a budget of at most {max_steps} probe calls. Begin.{
+You have a budget of at most {max_steps} check calls. Begin.{
         ' Note: this run uses synthetic placeholder data (two-wave shape '
         'baked in by construction), so treat any breaks found as a test of '
         'the pipeline/method, not real evidence.' if use_synthetic else ''
@@ -304,7 +230,7 @@ You have a budget of at most {max_steps} probe calls. Begin.{
     steps_used = 0
 
     for step in range(max_steps):
-        response = _generate_with_retry(
+        response = generate_with_retry(
             client, model=GEMINI_MODEL, contents=contents, config=config,
         )
         candidate = response.candidates[0]
@@ -319,7 +245,7 @@ You have a budget of at most {max_steps} probe calls. Begin.{
         for fc in function_calls:
             steps_used += 1
             try:
-                result = probe(use_synthetic=use_synthetic, **fc.args)
+                result = check(use_synthetic=use_synthetic, **fc.args)
                 trace.append({"params": result["params"], "result": result["series"]})
                 response_parts.append(
                     types.Part.from_function_response(name=fc.name, response={"result": result})
@@ -336,10 +262,10 @@ You have a budget of at most {max_steps} probe calls. Begin.{
         # Loop exhausted max_steps without the model volunteering a final
         # answer -- ask it directly, no more tool calls offered.
         contents.append(types.Content(role="user", parts=[types.Part(
-            text="Your probe budget is exhausted. Give your final verdict now, "
-                 "as plain text, based only on the probes already run above."
+            text="Your check budget is exhausted. Give your final verdict now, "
+                 "as plain text, based only on the checks already run above."
         )]))
-        response = _generate_with_retry(
+        response = generate_with_retry(
             client, model=GEMINI_MODEL, contents=contents,
             config=types.GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTIONS),
         )
@@ -358,11 +284,11 @@ def _print_trace(result: AgentResult) -> None:
     print("=" * 66)
     if result.used_synthetic:
         print("  *** SYNTHETIC PLACEHOLDER DATA -- NOT A REAL RESULT ***")
-    print(f"  Robustness agent -- {result.steps_used}/{result.max_steps} probes used")
+    print(f"  Robustness agent -- {result.steps_used}/{result.max_steps} checks used")
     print("-" * 66)
     for i, entry in enumerate(result.trace, 1):
         p = entry["params"]
-        print(f"  Probe {i}: w1_weight={p.get('w1_weight')}, "
+        print(f"  Check {i}: w1_weight={p.get('w1_weight')}, "
               f"pelt_penalty={p.get('pelt_penalty')}, "
               f"momentum_window={p.get('momentum_window')}")
         if "error" in entry:
@@ -382,7 +308,7 @@ def _print_trace(result: AgentResult) -> None:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--synthetic", action="store_true",
-                    help="probe synthetic placeholder data instead of real collector output")
+                    help="check synthetic placeholder data instead of real collector output")
     ap.add_argument("--max-steps", type=int, default=MAX_STEPS_DEFAULT)
     args = ap.parse_args()
 
@@ -408,10 +334,10 @@ def main():
     report_path = os.path.join(OUT_DIR, f"robustness_report{suffix}.md")
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(f"# Robustness agent report{' (SYNTHETIC DEMO DATA)' if args.synthetic else ''}\n\n")
-        f.write(f"{result.steps_used}/{result.max_steps} probes used.\n\n")
-        f.write("## Probes\n\n")
+        f.write(f"{result.steps_used}/{result.max_steps} checks used.\n\n")
+        f.write("## Checks\n\n")
         for i, entry in enumerate(result.trace, 1):
-            f.write(f"**Probe {i}**: `{json.dumps(entry['params'])}`\n\n")
+            f.write(f"**Check {i}**: `{json.dumps(entry['params'])}`\n\n")
             if "error" in entry:
                 f.write(f"- error: {entry['error']}\n\n")
                 continue

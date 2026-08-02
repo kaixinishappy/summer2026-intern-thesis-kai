@@ -71,7 +71,7 @@ into the composite FDI — they're validation charts, not additional index input
 ├── app.py                 # Streamlit app: live sliders, recomputes in real time
 ├── ai_assistant.py        # Gemini research assistant: live summary + Q&A, used by app.py
 ├── robustness_agent.py    # tool-using Gemini agent: red-teams the headline
-│                          #   breaks by choosing its own parameter probes
+│                          #   breaks by choosing its own parameter checks
 ├── data/
 │   ├── raw/                   # prices.csv, fundamentals.csv, indexed_performance.csv,
 │   │                          # market_marketwide.csv, wave1_trends.csv, wave2_trends.csv,
@@ -324,20 +324,20 @@ this section just shows the key prompt instead of the summary/chat tabs.
 The Robustness Checks tab has a **"Run robustness agent"** button backed by
 `robustness_agent.py`. Unlike the research assistant (a single grounded
 question-and-answer call), this is a genuine multi-step **tool-using agent**. It
-is given one tool — `probe(w1_weight, pelt_penalty, momentum_window)`, a thin
+is given one tool — `check(w1_weight, pelt_penalty, momentum_window)`, a thin
 wrapper around `build_index.py`'s own `build_indices()` / `run_break_analysis()`
 — and decides for itself, turn by turn, which parameter combinations to test,
 then judges whether each headline turning point is robust, fragile, or
-parameter-dependent. The dashboard shows its probe-by-probe trace (the exact
+parameter-dependent. The dashboard shows its check-by-check trace (the exact
 settings it chose and the break dates each returned) and its final verdict, so
 you watch the exploration, not just the conclusion.
 
 It is the qualitative counterpart to the built-in **stability score**, which is
 a *deterministic* grid sweep over the same parameters — the agent samples that
 space with reasoning instead of exhaustively, so treat it as an illustrative
-red-team, not a replacement for the stability percentages. It can only probe
+red-team, not a replacement for the stability percentages. It can only check
 within the same bounds the sidebar sliders expose (`w1_weight` 0–1,
-`pelt_penalty` 0.5–10, `momentum_window` 3–24) and is capped at a few probes so
+`pelt_penalty` 0.5–10, `momentum_window` 3–24) and is capped at a few checks so
 one run stays inside Gemini's free-tier quota. Also runnable from the CLI:
 
 ```bash

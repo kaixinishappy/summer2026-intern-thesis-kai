@@ -175,15 +175,15 @@
         <div class="agent-flow" aria-hidden="true">
           <div class="agent-flow-step"><span class="agent-flow-num">1</span>Pick parameters</div>
           <span class="agent-flow-arrow">→</span>
-          <div class="agent-flow-step agent-flow-tool"><span class="agent-flow-num">2</span><code>probe(w1_weight, pelt_penalty, momentum_window)</code></div>
+          <div class="agent-flow-step agent-flow-tool"><span class="agent-flow-num">2</span><code>check(w1_weight, pelt_penalty, momentum_window)</code></div>
           <span class="agent-flow-arrow">→</span>
           <div class="agent-flow-step"><span class="agent-flow-num">3</span>Recompute breaks</div>
           <span class="agent-flow-arrow">→</span>
           <div class="agent-flow-step"><span class="agent-flow-num">4</span>Judge robust / fragile</div>
-          <span class="agent-flow-loop" title="the agent repeats this loop for a few probes">↻ repeats</span>
+          <span class="agent-flow-loop" title="the agent repeats this loop for a few checks">↻ repeats</span>
         </div>
 
-        <p class="agent-note">Probes stay inside the sidebar's slider bounds and are capped so a run stays cheap. Watch it choose its probes below.</p>
+        <p class="agent-note">Checks stay inside the sidebar's slider bounds and are capped so a run stays cheap. Watch it choose its checks below.</p>
 
         <p class="control-hint" id="agent-hint"></p>
         <div id="agent-trace"></div>
@@ -209,12 +209,17 @@
         <div id="verdict-md" class="markdown-body"></div>
       </div>
 
-      <div class="card">
-        <h3>AI research assistant <span class="muted">(Gemini)</span></h3>
-        <p class="tab-intro">Grounded in the exact numbers computed in the Index Construction / Structural Breaks tabs at whatever the sidebar is currently set to.</p>
-        <div class="ai-tabs">
-          <button class="ai-tab-btn active" data-ai-tab="summary">Live summary</button>
-          <button class="ai-tab-btn" data-ai-tab="chat">Ask a question</button>
+      <div class="card ai-assistant">
+        <div class="ai-header">
+          <span class="ai-avatar" aria-hidden="true">✦</span>
+          <div class="ai-header-text">
+            <h3>AI research assistant <span class="ai-model-pill">Gemini</span></h3>
+            <p class="ai-subtitle">Grounded in the exact numbers computed in the Index Construction / Structural Breaks tabs at whatever the sidebar is currently set to.</p>
+          </div>
+        </div>
+        <div class="ai-tabs" role="tablist">
+          <button class="ai-tab-btn active" data-ai-tab="summary" role="tab">Live summary</button>
+          <button class="ai-tab-btn" data-ai-tab="chat" role="tab">Ask a question</button>
         </div>
         <div id="ai-summary" class="ai-panel active">
           <button id="gen-summary" class="btn btn-primary">Generate summary</button>
@@ -224,7 +229,7 @@
           <div id="chat-history" class="chat-history"></div>
           <form id="chat-form" class="chat-form">
             <input type="text" id="chat-input" placeholder="Ask about the findings…" autocomplete="off">
-            <button type="submit" class="btn btn-primary">Send</button>
+            <button type="submit" class="btn btn-primary chat-send">Send</button>
           </form>
         </div>
       </div>

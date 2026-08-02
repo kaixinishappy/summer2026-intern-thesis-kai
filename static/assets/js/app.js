@@ -453,12 +453,22 @@
       const out = $("#ai-summary-output");
       btn.disabled = true;
       out.innerHTML = `<p class="tab-intro">Asking Gemini…</p>`;
+      let acc = "";
+      let errored = false;
       try {
         const apiKey = $("#gemini_api_key").value.trim();
-        const res = await Api.aiSummary({ ...currentParams(), api_key: apiKey || null });
-        out.innerHTML = marked.parse(res.summary || "");
+        await Api.aiSummaryStream({ ...currentParams(), api_key: apiKey || null }, (event, data) => {
+          if (event === "token") {
+            acc += data.text;
+            out.innerHTML = marked.parse(acc);
+          } else if (event === "error") {
+            errored = true;
+            out.innerHTML = `<p class="tab-intro">Gemini request failed: ${escapeHtml(data.message)}</p>`;
+          }
+        });
+        if (!errored && !acc) out.innerHTML = `<p class="tab-intro">Gemini returned no summary.</p>`;
       } catch (e) {
-        out.innerHTML = `<p class="tab-intro">Gemini request failed: ${e.message}</p>`;
+        out.innerHTML = `<p class="tab-intro">Gemini request failed: ${escapeHtml(e.message)}</p>`;
       } finally {
         btn.disabled = false;
       }
@@ -471,36 +481,86 @@
       if (!question) return;
       input.value = "";
       appendChatMsg("user", question);
+      const historySnapshot = state.chatHistory.slice();
       state.chatHistory.push({ role: "user", content: question });
-      appendChatMsg("assistant", "…thinking…", true);
+
+      const turn = startAssistantTurn();
+      let answer = "";
       try {
         const apiKey = $("#gemini_api_key").value.trim();
-        const res = await Api.aiChat({
+        await Api.aiChatStream({
           ...currentParams(), api_key: apiKey || null,
-          question, history: state.chatHistory.slice(0, -1),
+          question, history: historySnapshot,
+        }, (event, data) => {
+          if (event === "token") { answer += data.text; turn.onToken(answer); }
+          else if (event === "tool") { turn.onTool(data); }
+          else if (event === "error") { answer = ""; turn.fail(data.message); }
         });
-        replaceLastAssistantMsg(res.answer);
-        state.chatHistory.push({ role: "assistant", content: res.answer });
+        turn.finish(answer);
+        if (answer) state.chatHistory.push({ role: "assistant", content: answer });
       } catch (err) {
-        replaceLastAssistantMsg(`Gemini request failed: ${err.message}`);
+        turn.fail(err.message);
       }
     });
   }
 
-  function appendChatMsg(role, text, placeholder) {
+  function appendChatMsg(role, text) {
     const div = document.createElement("div");
     div.className = `chat-msg ${role}`;
-    if (placeholder) div.dataset.placeholder = "1";
     div.textContent = text;
     $("#chat-history").appendChild(div);
-    $("#chat-history").scrollTop = $("#chat-history").scrollHeight;
+    scrollChat();
   }
-  function replaceLastAssistantMsg(text) {
-    const placeholder = $("#chat-history").querySelector('[data-placeholder="1"]');
-    if (placeholder) {
-      placeholder.innerHTML = marked.parseInline ? marked.parse(text) : text;
-      delete placeholder.dataset.placeholder;
-    }
+
+  function scrollChat() {
+    const h = $("#chat-history");
+    h.scrollTop = h.scrollHeight;
+  }
+
+  // Manages one streaming assistant reply: a bubble whose text is re-rendered
+  // as tokens arrive, plus a recompute chip inserted above it for each what-if
+  // tool call the model made.
+  function startAssistantTurn() {
+    const history = $("#chat-history");
+    const bubble = document.createElement("div");
+    bubble.className = "chat-msg assistant streaming";
+    bubble.textContent = "…thinking…";
+    history.appendChild(bubble);
+    scrollChat();
+    let hasText = false;
+
+    const fmt = (v) => (v === undefined || v === null ? "?" : v);
+    return {
+      onToken(fullText) {
+        hasText = true;
+        bubble.classList.remove("streaming");
+        bubble.innerHTML = marked.parse(fullText);
+        scrollChat();
+      },
+      onTool(data) {
+        const p = data.params || {};
+        const params = `w1=${fmt(p.w1_weight)} · penalty=${fmt(p.pelt_penalty)} · window=${fmt(p.momentum_window)}`;
+        const chip = document.createElement("div");
+        chip.className = "chat-tool" + (data.error ? " error" : "");
+        chip.innerHTML =
+          `<span class="chat-tool-icon">↻</span>` +
+          `<span class="chat-tool-name">recompute</span>` +
+          `<code>${escapeHtml(params)}</code>` +
+          (data.error ? `<span class="chat-tool-err">${escapeHtml(String(data.error))}</span>` : "");
+        history.insertBefore(chip, bubble);
+        scrollChat();
+      },
+      finish(fullText) {
+        if (!hasText && !fullText) {
+          bubble.classList.remove("streaming");
+          bubble.textContent = "(no answer returned)";
+        }
+      },
+      fail(msg) {
+        bubble.classList.remove("streaming");
+        bubble.textContent = `Gemini request failed: ${msg}`;
+      },
+    };
   }
 
   // ------------------------------------------------- robustness agent --
@@ -514,7 +574,7 @@
       const verdictEl = $("#agent-verdict");
       btn.disabled = true;
       btn.innerHTML = `<span class="spinner"></span><span class="btn-agent-label">Running…</span>`;
-      hint.textContent = "The agent is choosing and running its probes — this makes a few Gemini calls, so give it a moment…";
+      hint.textContent = "The agent is choosing and running its checks — this makes a few Gemini calls, so give it a moment…";
       traceEl.innerHTML = "";
       verdictEl.innerHTML = "";
       try {
@@ -540,17 +600,17 @@
       ? `<div class="synthetic-notice">Synthetic placeholder data — the breaks below test the method, not the thesis.</div>`
       : "";
 
-    // Each probe the agent chose to run, with the break dates it got back --
+    // Each check the agent chose to run, with the break dates it got back --
     // so a viewer sees the agent's actual exploration, not just its conclusion.
-    const probes = res.trace.map((entry, i) => {
+    const checks = res.trace.map((entry, i) => {
       const p = entry.params || {};
       const params = ["w1", "pen", "win"].map((k, j) => {
         const v = [p.w1_weight, p.pelt_penalty, p.momentum_window][j];
         return `<span class="agent-param">${k} ${escapeHtml(String(v))}</span>`;
       }).join("");
-      const head = `<div class="agent-probe-head"><span class="agent-probe-n">Probe ${i + 1}</span><span class="agent-params">${params}</span></div>`;
+      const head = `<div class="agent-check-head"><span class="agent-check-n">Check ${i + 1}</span><span class="agent-params">${params}</span></div>`;
       if (entry.error) {
-        return `<div class="agent-probe">${head}<div class="stance-rationale">error: ${escapeHtml(entry.error)}</div></div>`;
+        return `<div class="agent-check">${head}<div class="stance-rationale">error: ${escapeHtml(entry.error)}</div></div>`;
       }
       const series = ["wave1", "wave2", "FDI"].map((col) => {
         const info = (entry.result && entry.result[col]) || {};
@@ -559,12 +619,12 @@
           : `<span class="agent-break agent-break-none">none</span>`;
         return `<div class="agent-series"><span class="agent-series-name">${col}</span><span class="agent-breaks">${dates}</span></div>`;
       }).join("");
-      return `<div class="agent-probe">${head}${series}</div>`;
+      return `<div class="agent-check">${head}${series}</div>`;
     }).join("");
 
     $("#agent-trace").innerHTML =
-      `${note}<div class="agent-probes-head muted">${res.steps_used}/${res.max_steps} probes used</div>
-       <div class="agent-probes">${probes}</div>`;
+      `${note}<div class="agent-checks-head muted">${res.steps_used}/${res.max_steps} checks used</div>
+       <div class="agent-checks">${checks}</div>`;
     $("#agent-verdict").innerHTML =
       `<h4 class="agent-verdict-title">Agent verdict</h4><div class="agent-verdict-body">${marked.parse(res.verdict || "")}</div>`;
   }
