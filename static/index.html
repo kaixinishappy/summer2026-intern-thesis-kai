@@ -21,37 +21,44 @@
 <div class="layout">
 
   <aside class="sidebar">
-    <h2>Parameters</h2>
+    <button class="sidebar-toggle" id="sidebar-toggle" type="button"
+            title="Collapse parameters" aria-label="Collapse parameters"
+            aria-expanded="true" aria-controls="sidebar-body">‹</button>
+    <span class="sidebar-rail-label" aria-hidden="true">Parameters</span>
 
-    <label class="control">
-      <span class="control-label">Wave 1 weight in composite FDI <b id="w1_weight_val">0.50</b></span>
-      <input type="range" id="w1_weight" min="0" max="1" step="0.05" value="0.5">
-      <span class="control-hint">FDI = weight × Wave1 + (1 − weight) × Wave2</span>
-    </label>
+    <div class="sidebar-body" id="sidebar-body">
+      <h2>Parameters</h2>
 
-    <label class="control">
-      <span class="control-label">PELT penalty <b id="pelt_penalty_val">3.0</b></span>
-      <input type="range" id="pelt_penalty" min="0.5" max="10" step="0.5" value="3.0">
-      <span class="control-hint">Higher = fewer, more conservative breaks</span>
-    </label>
+      <label class="control">
+        <span class="control-label">Wave 1 weight in composite FDI <b id="w1_weight_val">0.50</b></span>
+        <input type="range" id="w1_weight" min="0" max="1" step="0.05" value="0.5">
+        <span class="control-hint">FDI = weight × Wave1 + (1 − weight) × Wave2</span>
+      </label>
 
-    <label class="control">
-      <span class="control-label">Momentum window (months) <b id="momentum_window_val">12</b></span>
-      <input type="range" id="momentum_window" min="3" max="24" step="1" value="12">
-      <span class="control-hint">Breaks are detected on this trailing window's rate of change</span>
-    </label>
+      <label class="control">
+        <span class="control-label">PELT penalty <b id="pelt_penalty_val">3.0</b></span>
+        <input type="range" id="pelt_penalty" min="0.5" max="10" step="0.5" value="3.0">
+        <span class="control-hint">Higher = fewer, more conservative breaks</span>
+      </label>
 
-    <label class="control control-checkbox">
-      <input type="checkbox" id="use_synthetic">
-      <span>Use synthetic demo data</span>
-    </label>
-    <p class="control-hint" id="synthetic-hint"></p>
+      <label class="control">
+        <span class="control-label">Momentum window (months) <b id="momentum_window_val">12</b></span>
+        <input type="range" id="momentum_window" min="3" max="24" step="1" value="12">
+        <span class="control-hint">Breaks are detected on this trailing window's rate of change</span>
+      </label>
 
-    <details class="ai-key-details">
-      <summary>Gemini API key</summary>
-      <input type="password" id="gemini_api_key" placeholder="AI Studio key (ai.google.dev)">
-      <p class="control-hint">Only used in this browser session, never sent anywhere but this server. Needed for the AI assistant.</p>
-    </details>
+      <label class="control control-checkbox">
+        <input type="checkbox" id="use_synthetic">
+        <span>Use synthetic demo data</span>
+      </label>
+      <p class="control-hint" id="synthetic-hint"></p>
+
+      <details class="ai-key-details">
+        <summary>Gemini API key</summary>
+        <input type="password" id="gemini_api_key" placeholder="AI Studio key (ai.google.dev)">
+        <p class="control-hint">Only used in this browser session, never sent anywhere but this server. Needed for the AI assistant.</p>
+      </details>
+    </div>
   </aside>
 
   <main class="content">
@@ -143,7 +150,7 @@
 
       <div class="card">
         <h3>What the agentic passages actually say <span class="muted">(deploying vs. exploring vs. naming it a risk)</span></h3>
-        <p class="tab-intro">The agentic-mention <i>count</i> (Data Collection tab) treats every "agentic" mention alike. But reading the passages, an LLM (<code>classify_filings.py</code>) separates three very different things a filing can be doing with the same word: <b>deploying</b> agentic AI in its own products, <b>exploring</b> it, or naming it as a <b>risk / competitive threat</b>. This is the one read the raw count structurally cannot give — and it sharpens Part 3: the big banks' mentions are almost entirely risk disclosures, not deployment. The passages below show the clearest signals (deploying / risk); the table's counts cover all of them, and exploratory / unclear ones are one click away.</p>
+        <p class="tab-intro">The agentic-mention <i>count</i> (Data Collection tab) treats every "agentic" mention alike. But reading the passages, an LLM (<code>classify_filings.py</code>) separates three very different things a filing can be doing with the same word: <b>deploying</b> agentic AI in its own products, <b>exploring</b> it, or naming it as a <b>risk / competitive threat</b>. </p>
         <div id="edgar-stance-summary" class="table-wrap"></div>
         <div id="edgar-stance-passages"></div>
       </div>
@@ -154,10 +161,30 @@
         <div id="chart-macro-control" class="chart chart-tall"></div>
       </div>
 
-      <div class="card">
-        <h3>Robustness agent <span class="muted">(a tool-using LLM red-teams the headline breaks)</span></h3>
-        <p class="tab-intro">The stability score is a <i>deterministic</i> grid sweep. This is its qualitative counterpart: a Gemini agent with one tool — <code>probe(w1_weight, pelt_penalty, momentum_window)</code>, which recomputes the index and turning points — decides for itself which parameter settings to test, then judges whether each headline break is robust, fragile, or parameter-dependent. It can only probe within the same bounds the sidebar sliders expose, and is capped at a few probes so one run stays cheap. Watch it choose its probes below.</p>
-        <button type="button" class="btn-primary" id="run-agent-btn">Run robustness agent</button>
+      <div class="card agent-card">
+        <div class="agent-header">
+          <div class="agent-header-text">
+            <h3>Robustness agent <span class="badge-ai">AI · tool-using</span></h3>
+            <p class="agent-sub">A Gemini agent that red-teams the headline turning points. Given one tool, it decides for itself which parameter settings to test, then judges whether each break is robust, fragile, or parameter-dependent.</p>
+          </div>
+          <button type="button" class="btn-primary btn-agent" id="run-agent-btn">
+            <span class="btn-agent-icon" aria-hidden="true">▸</span><span class="btn-agent-label">Run agent</span>
+          </button>
+        </div>
+
+        <div class="agent-flow" aria-hidden="true">
+          <div class="agent-flow-step"><span class="agent-flow-num">1</span>Pick parameters</div>
+          <span class="agent-flow-arrow">→</span>
+          <div class="agent-flow-step agent-flow-tool"><span class="agent-flow-num">2</span><code>probe(w1_weight, pelt_penalty, momentum_window)</code></div>
+          <span class="agent-flow-arrow">→</span>
+          <div class="agent-flow-step"><span class="agent-flow-num">3</span>Recompute breaks</div>
+          <span class="agent-flow-arrow">→</span>
+          <div class="agent-flow-step"><span class="agent-flow-num">4</span>Judge robust / fragile</div>
+          <span class="agent-flow-loop" title="the agent repeats this loop for a few probes">↻ repeats</span>
+        </div>
+
+        <p class="agent-note">Probes stay inside the sidebar's slider bounds and are capped so a run stays cheap. Watch it choose its probes below.</p>
+
         <p class="control-hint" id="agent-hint"></p>
         <div id="agent-trace"></div>
         <div id="agent-verdict"></div>

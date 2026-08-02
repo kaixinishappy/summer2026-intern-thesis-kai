@@ -315,17 +315,18 @@
         <div class="stance-rationale">${escapeHtml(p.rationale)}</div>
       </div>`;
 
-    // Default to the clearest thesis-relevant signals -- "deploying" and "risk"
-    // are the two poles Part 3 contrasts (fintechs building vs. banks flagging
-    // a threat). "exploring" and "unclear" are the muddy middle; they're still
-    // rendered but collapsed behind a toggle, so nothing is removed -- and the
-    // counts table above always reflects ALL passages. This is a presentation
-    // default, not a filter on the evidence.
+    // "unclear" passages carry no signal by definition -- the model declined to
+    // classify them (e.g. the phrase appears only inside a cross-referenced
+    // section title), so they're not rendered as cards at all. They still count
+    // in the summary table's U column above, so the accounting stays honest; we
+    // just don't quote a no-context match. Of what remains, "deploying" and
+    // "risk" are the two poles Part 3 contrasts and show by default; "exploring"
+    // is the muddy middle, collapsed behind a toggle.
     const PRIMARY = new Set(["deploying", "risk"]);
     const primary = data.passages.filter((p) => PRIMARY.has(p.stance));
-    const secondary = data.passages.filter((p) => !PRIMARY.has(p.stance));
+    const secondary = data.passages.filter((p) => p.stance === "exploring");
 
-    const collapsedLabel = `Show ${secondary.length} exploratory / unclear passage${secondary.length === 1 ? "" : "s"}`;
+    const collapsedLabel = `Show ${secondary.length} exploratory passage${secondary.length === 1 ? "" : "s"}`;
     $("#edgar-stance-passages").innerHTML =
       `<div class="stance-passages">${primary.map(card).join("")}</div>` +
       (secondary.length
@@ -338,7 +339,7 @@
       btn.addEventListener("click", () => {
         const sec = $("#stance-secondary");
         sec.hidden = !sec.hidden;
-        btn.textContent = sec.hidden ? collapsedLabel : "Hide exploratory / unclear";
+        btn.textContent = sec.hidden ? collapsedLabel : "Hide exploratory passages";
       });
     }
   }
@@ -512,6 +513,7 @@
       const traceEl = $("#agent-trace");
       const verdictEl = $("#agent-verdict");
       btn.disabled = true;
+      btn.innerHTML = `<span class="spinner"></span><span class="btn-agent-label">Running…</span>`;
       hint.textContent = "The agent is choosing and running its probes — this makes a few Gemini calls, so give it a moment…";
       traceEl.innerHTML = "";
       verdictEl.innerHTML = "";
@@ -528,6 +530,7 @@
         verdictEl.innerHTML = `<p class="tab-intro">Agent run failed: ${escapeHtml(e.message)}</p>`;
       } finally {
         btn.disabled = false;
+        btn.innerHTML = `<span class="btn-agent-icon" aria-hidden="true">▸</span><span class="btn-agent-label">Run agent again</span>`;
       }
     });
   }
@@ -541,16 +544,22 @@
     // so a viewer sees the agent's actual exploration, not just its conclusion.
     const probes = res.trace.map((entry, i) => {
       const p = entry.params || {};
-      const head = `<b>Probe ${i + 1}</b> <span class="muted">w1=${escapeHtml(String(p.w1_weight))}, penalty=${escapeHtml(String(p.pelt_penalty))}, window=${escapeHtml(String(p.momentum_window))}</span>`;
+      const params = ["w1", "pen", "win"].map((k, j) => {
+        const v = [p.w1_weight, p.pelt_penalty, p.momentum_window][j];
+        return `<span class="agent-param">${k} ${escapeHtml(String(v))}</span>`;
+      }).join("");
+      const head = `<div class="agent-probe-head"><span class="agent-probe-n">Probe ${i + 1}</span><span class="agent-params">${params}</span></div>`;
       if (entry.error) {
-        return `<div class="agent-probe"><div class="agent-probe-head">${head}</div><div class="stance-rationale">error: ${escapeHtml(entry.error)}</div></div>`;
+        return `<div class="agent-probe">${head}<div class="stance-rationale">error: ${escapeHtml(entry.error)}</div></div>`;
       }
       const series = ["wave1", "wave2", "FDI"].map((col) => {
         const info = (entry.result && entry.result[col]) || {};
-        const dates = (info.break_dates && info.break_dates.length) ? info.break_dates.join(", ") : "none";
-        return `<div class="agent-series"><span class="agent-series-name">${col}</span> ${escapeHtml(dates)}</div>`;
+        const dates = (info.break_dates && info.break_dates.length)
+          ? info.break_dates.map((d) => `<span class="agent-break">${escapeHtml(d)}</span>`).join("")
+          : `<span class="agent-break agent-break-none">none</span>`;
+        return `<div class="agent-series"><span class="agent-series-name">${col}</span><span class="agent-breaks">${dates}</span></div>`;
       }).join("");
-      return `<div class="agent-probe"><div class="agent-probe-head">${head}</div>${series}</div>`;
+      return `<div class="agent-probe">${head}${series}</div>`;
     }).join("");
 
     $("#agent-trace").innerHTML =
@@ -562,9 +571,35 @@
 
   // ------------------------------------------------------------- init --
 
+  function initSidebarToggle() {
+    const layout = document.querySelector(".layout");
+    const btn = $("#sidebar-toggle");
+    if (!layout || !btn) return;
+
+    const apply = (collapsed) => {
+      layout.classList.toggle("sidebar-collapsed", collapsed);
+      btn.textContent = collapsed ? "›" : "‹";
+      btn.setAttribute("aria-expanded", String(!collapsed));
+      btn.title = collapsed ? "Expand parameters" : "Collapse parameters";
+      btn.setAttribute("aria-label", btn.title);
+    };
+
+    apply(localStorage.getItem("sidebarCollapsed") === "1");
+
+    btn.addEventListener("click", () => {
+      const collapsed = !layout.classList.contains("sidebar-collapsed");
+      apply(collapsed);
+      localStorage.setItem("sidebarCollapsed", collapsed ? "1" : "0");
+      // The content column just changed width -- nudge Plotly to reflow the
+      // charts after the grid transition settles.
+      setTimeout(() => window.dispatchEvent(new Event("resize")), 220);
+    });
+  }
+
   async function init() {
     initTheme();
     initTabs();
+    initSidebarToggle();
     initAiAssistant();
     initRobustnessAgent();
     const status = await Api.status();

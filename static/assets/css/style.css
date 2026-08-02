@@ -127,7 +127,10 @@ p { line-height: 1.5; }
   grid-template-columns: 260px 1fr;
   gap: 0;
   align-items: start;
+  transition: grid-template-columns 0.2s ease;
 }
+.layout.sidebar-collapsed { grid-template-columns: 2.75rem 1fr; }
+
 .sidebar {
   position: sticky;
   top: 3.6rem;
@@ -136,12 +139,44 @@ p { line-height: 1.5; }
   height: calc(100vh - 3.6rem);
   overflow-y: auto;
 }
-.sidebar h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.sidebar h2 {
+  font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); padding-right: 1.6rem;
+}
 .content { padding: 1.25rem 1.5rem 4rem; min-width: 0; }
 
+/* collapse toggle: sits top-right of the sidebar, centered when collapsed */
+.sidebar-toggle {
+  position: absolute; top: 1.15rem; right: 0.7rem; z-index: 2;
+  width: 1.5rem; height: 1.5rem; display: inline-flex; align-items: center;
+  justify-content: center; padding: 0; line-height: 1; font-size: 1rem;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface-1); color: var(--text-secondary); cursor: pointer;
+}
+.sidebar-toggle:hover { background: var(--gridline); color: var(--text-primary); }
+.sidebar-rail-label { display: none; }
+
+.layout.sidebar-collapsed .sidebar { padding-left: 0; padding-right: 0; overflow: hidden; }
+.layout.sidebar-collapsed .sidebar-body { display: none; }
+.layout.sidebar-collapsed .sidebar-toggle {
+  top: 0.7rem; left: 50%; right: auto; transform: translateX(-50%);
+}
+.layout.sidebar-collapsed .sidebar-rail-label {
+  display: block; writing-mode: vertical-rl; transform: rotate(180deg);
+  margin: 3rem auto 0; font-size: 0.72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted);
+  white-space: nowrap;
+}
+
 @media (max-width: 860px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout, .layout.sidebar-collapsed { grid-template-columns: 1fr; }
   .sidebar { position: relative; top: 0; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+  /* on a stacked mobile layout, collapse just hides the controls */
+  .layout.sidebar-collapsed .sidebar { padding: 0.9rem 1.1rem; }
+  .layout.sidebar-collapsed .sidebar-toggle { top: 0.9rem; left: auto; right: 0.7rem; transform: none; }
+  .layout.sidebar-collapsed .sidebar-rail-label {
+    writing-mode: horizontal-tb; transform: none; margin: 0; display: inline-block;
+  }
 }
 
 /* ---- controls ---- */
@@ -242,6 +277,10 @@ p { line-height: 1.5; }
 .stance-bar span { background: var(--stance-c); }
 
 .stance-passages { display: grid; gap: 0.5rem; margin-top: 0.9rem; }
+/* [hidden] must beat `.stance-passages { display: grid }` (equal specificity,
+   author display wins over the UA [hidden] rule), or the collapse toggle can
+   never actually hide the secondary block. */
+.stance-passages[hidden] { display: none; }
 .stance-passage {
   border: 1px solid var(--border); border-left: 3px solid var(--stance-c);
   border-radius: 6px; padding: 0.55rem 0.7rem; font-size: 0.82rem;
@@ -264,22 +303,120 @@ p { line-height: 1.5; }
 }
 .stance-toggle:hover { border-color: var(--text-muted); }
 
+/* ---- robustness agent card ---- */
+.agent-card { position: relative; overflow: hidden; }
+/* subtle accent bar down the left edge marks this as the interactive agent */
+.agent-card::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(var(--series-violet), var(--series-blue));
+}
+.agent-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap;
+}
+.agent-header-text { flex: 1 1 22rem; min-width: 0; }
+.agent-header h3 { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.agent-sub {
+  margin: 0.4rem 0 0; font-size: 0.85rem; line-height: 1.5;
+  color: var(--text-secondary); max-width: 60ch;
+}
+.badge-ai {
+  font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--series-violet); border: 1px solid var(--series-violet);
+  background: color-mix(in srgb, var(--series-violet) 12%, transparent);
+  padding: 0.16rem 0.5rem; border-radius: 999px; white-space: nowrap;
+}
+
+.btn-agent {
+  display: inline-flex; align-items: center; gap: 0.5rem; white-space: nowrap;
+  padding: 0.55rem 1.1rem; font-weight: 600; flex: 0 0 auto;
+  box-shadow: 0 1px 2px rgba(11, 11, 11, 0.12);
+}
+.btn-agent .btn-agent-icon { font-size: 0.8rem; line-height: 1; }
+.btn-agent:disabled { opacity: 1; background: var(--text-muted); border-color: var(--text-muted); }
+
+.spinner {
+  display: inline-block; width: 0.85rem; height: 0.85rem;
+  border: 2px solid rgba(255, 255, 255, 0.45); border-top-color: #fff;
+  border-radius: 50%; animation: agent-spin 0.7s linear infinite; flex: 0 0 auto;
+}
+@keyframes agent-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
+
+/* the agent loop, shown as connected chips instead of buried in prose */
+.agent-flow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.45rem;
+  margin: 1rem 0 0.65rem; padding: 0.7rem 0.8rem;
+  background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+}
+.agent-flow-step {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.76rem; color: var(--text-secondary);
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 8px; padding: 0.3rem 0.55rem 0.3rem 0.3rem;
+}
+.agent-flow-tool code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem; color: var(--text-primary);
+}
+.agent-flow-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.15rem; height: 1.15rem; border-radius: 6px; flex: 0 0 auto;
+  background: var(--series-blue); color: #fff; font-size: 0.68rem; font-weight: 700;
+}
+.agent-flow-arrow { color: var(--text-muted); font-size: 0.85rem; }
+.agent-flow-loop {
+  margin-left: auto; font-size: 0.7rem; font-weight: 600; color: var(--series-violet);
+  border: 1px dashed var(--series-violet); border-radius: 999px; padding: 0.2rem 0.55rem;
+  white-space: nowrap;
+}
+.agent-note {
+  margin: 0; font-size: 0.76rem; color: var(--text-muted); line-height: 1.45;
+}
+
 /* ---- robustness agent trace ---- */
-.agent-probes-head { font-size: 0.76rem; margin: 0.7rem 0 0.4rem; }
+.agent-probes-head { font-size: 0.76rem; margin: 0.9rem 0 0.4rem; font-weight: 600; color: var(--text-secondary); }
 .agent-probes { display: grid; gap: 0.5rem; }
 .agent-probe {
-  border: 1px solid var(--border); border-radius: 6px;
-  padding: 0.5rem 0.7rem; font-size: 0.82rem;
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.6rem 0.75rem; font-size: 0.82rem; background: var(--surface-1);
 }
-.agent-probe-head { margin-bottom: 0.3rem; }
-.agent-probe-head .muted { color: var(--text-muted); font-size: 0.76rem; }
-.agent-series { display: flex; gap: 0.5rem; font-size: 0.78rem; }
+.agent-probe-head {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;
+}
+.agent-probe-n { font-weight: 700; font-size: 0.8rem; }
+.agent-params { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
+.agent-param {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.7rem;
+  color: var(--text-secondary); background: var(--page);
+  border: 1px solid var(--border); border-radius: 5px; padding: 0.1rem 0.4rem;
+}
+.agent-series {
+  display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem;
+  padding: 0.15rem 0;
+}
 .agent-series-name {
-  display: inline-block; min-width: 3.2rem; font-weight: 600;
-  color: var(--text-secondary);
+  display: inline-block; min-width: 3rem; font-weight: 600;
+  color: var(--text-muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em;
 }
-.agent-verdict-title { margin: 1rem 0 0.4rem; font-size: 0.92rem; }
-.agent-verdict-body { font-size: 0.9rem; }
+.agent-breaks { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
+.agent-break {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem;
+  color: var(--series-blue); background: color-mix(in srgb, var(--series-blue) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--series-blue) 35%, transparent);
+  border-radius: 5px; padding: 0.08rem 0.4rem;
+}
+.agent-break-none {
+  color: var(--text-muted); background: none; border-color: var(--border);
+}
+.agent-verdict-title {
+  margin: 1.1rem 0 0.4rem; font-size: 0.8rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);
+}
+.agent-verdict-body {
+  font-size: 0.9rem; line-height: 1.55;
+  border-left: 3px solid var(--series-violet); padding-left: 0.85rem;
+}
 
 /* ---- stat tiles ---- */
 
