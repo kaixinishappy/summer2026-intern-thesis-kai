@@ -5,7 +5,7 @@
     "wave1": {
       "break_dates": [
         "2021-04-30",
-        "2025-06-30"
+        "2025-11-30"
       ],
       "n_breaks": 2,
       "turning_points": [
@@ -17,7 +17,22 @@
           "stability_pct": 75.0
         },
         {
-          "break_date": "2025-06-30",
+          "break_date": "2025-11-30",
+          "direction": "acceleration",
+          "n_settings_matched": 13,
+          "n_settings": 20,
+          "stability_pct": 65.0
+        }
+      ]
+    },
+    "wave2": {
+      "break_dates": [
+        "2025-11-30"
+      ],
+      "n_breaks": 1,
+      "turning_points": [
+        {
+          "break_date": "2025-11-30",
           "direction": "acceleration",
           "n_settings_matched": 14,
           "n_settings": 20,
@@ -25,41 +40,26 @@
         }
       ]
     },
-    "wave2": {
-      "break_dates": [
-        "2025-06-30"
-      ],
-      "n_breaks": 1,
-      "turning_points": [
-        {
-          "break_date": "2025-06-30",
-          "direction": "acceleration",
-          "n_settings_matched": 19,
-          "n_settings": 20,
-          "stability_pct": 95.0
-        }
-      ]
-    },
     "FDI": {
       "break_dates": [
         "2021-04-30",
-        "2025-06-30"
+        "2025-11-30"
       ],
       "n_breaks": 2,
       "turning_points": [
         {
           "break_date": "2021-04-30",
           "direction": "slowdown",
-          "n_settings_matched": 7,
+          "n_settings_matched": 9,
           "n_settings": 20,
-          "stability_pct": 35.0
+          "stability_pct": 45.0
         },
         {
-          "break_date": "2025-06-30",
+          "break_date": "2025-11-30",
           "direction": "acceleration",
-          "n_settings_matched": 15,
+          "n_settings_matched": 14,
           "n_settings": 20,
-          "stability_pct": 75.0
+          "stability_pct": 70.0
         }
       ]
     }
