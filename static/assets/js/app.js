@@ -13,6 +13,7 @@
     robustnessChecksLoaded: false,
     convergenceLoaded: false,
     verdictLoaded: false,
+    predictionsLoaded: false,
     chatHistory: [],
   };
 
@@ -101,6 +102,7 @@
     if (tab === "robustness" && !state.robustnessChecksLoaded) loadRobustnessChecks();
     if (tab === "convergence" && !state.convergenceLoaded) loadConvergence();
     if (tab === "verdict" && !state.verdictLoaded) loadVerdict();
+    if (tab === "verdict" && !state.predictionsLoaded) loadPredictions();
     if (tab === "convergence" && state.convergenceLoaded) renderConvergence(state._conv);
     if ((tab === "index-construction" || tab === "structural-breaks") && state.lastIndex) {
       renderIndexTabs(state.lastIndex); // Plotly needs a resize/re-render once its div is visible
@@ -398,7 +400,6 @@
   function renderRobustnessChecks(data) {
     Charts.marketMarketwide("chart-mw-etf", "chart-mw-ratio", data.market_marketwide);
     Charts.edgarMarketwide("chart-edgar-mw-top", "chart-edgar-mw-bottom", data.edgar_marketwide);
-    if (data.macro_control) Charts.macroControl("chart-macro-control", data.macro_control);
   }
 
   // ------------------------------------------------- Converging Evidence --
@@ -433,6 +434,154 @@
     } catch (e) {
       $("#verdict-md").innerHTML = `<p>${e.message}</p>`;
     }
+  }
+
+  // ---------------------------------------------------- prediction scorecard --
+
+  async function loadPredictions() {
+    try {
+      const data = await Api.predictions();
+      state.predictionsLoaded = true;
+      renderPredictions(data);
+    } catch (e) {
+      $("#prediction-scorecard").innerHTML = `<p class="tab-intro">Could not load prediction: ${escapeHtml(e.message)}</p>`;
+    }
+  }
+
+  const LEAN_CLASS = { holding: "lean-holding", watch: "lean-watch", contrary: "lean-contrary", insufficient: "lean-muted" };
+
+  function renderPredictions(data) {
+    const r = data.reading;
+    const lean = $("#prediction-lean");
+    lean.textContent = r.lean_label;
+    lean.className = `prediction-lean ${LEAN_CLASS[r.lean] || "lean-muted"}`;
+
+    $("#prediction-claim").innerHTML =
+      `${escapeHtml(r.prediction)}<span class="prediction-frozen">frozen ${escapeHtml(r.frozen_date)}</span>`;
+
+    // The three tracked signals as tiles, mirroring the scorecard columns.
+    const s = r.signals;
+    const posture = s.bank_posture;
+    const tiles = [];
+    if (posture) {
+      tiles.push({
+        label: "Bank posture",
+        value: posture.banks_governing ? "Governance-first" : "Deploying",
+        sub: `${posture.bank_risk} risk / ${posture.bank_deploy} deploy`,
+        cls: posture.banks_governing ? "sig-yes" : "sig-no",
+      });
+      tiles.push({
+        label: "Fintech deploy lead",
+        value: posture.fintech_leads_deploying ? "Yes" : "No",
+        sub: `${posture.fintech_deploy} fintech vs ${posture.bank_deploy} bank`,
+        cls: posture.fintech_leads_deploying ? "sig-yes" : "sig-no",
+      });
+    } else {
+      tiles.push({ label: "Bank posture", value: "Not classified", sub: "run classify_filings.py", cls: "" });
+      tiles.push({ label: "Fintech deploy lead", value: "Not classified", sub: "run classify_filings.py", cls: "" });
+    }
+    tiles.push({
+      label: "Wave 2 ignition",
+      value: s.wave2_ignition_pct === null ? "None" : `${fmt(s.wave2_ignition_pct, 0)}%`,
+      sub: s.wave2_ignition_note ? `${s.wave2_ignition_note} (context only)` : "attention (context only)",
+      cls: "",
+    });
+    $("#prediction-signals").innerHTML = tiles.map((t) => `
+      <div class="stat-tile">
+        <div class="stat-label">${t.label}</div>
+        <div class="stat-value ${t.cls}">${escapeHtml(t.value)}</div>
+        <div class="stat-sub">${escapeHtml(t.sub)}</div>
+      </div>`).join("");
+
+    $("#prediction-blindspot").innerHTML =
+      `<b>Why ${escapeHtml(r.lean_label)}:</b> ${escapeHtml(r.rationale)}`;
+
+    // The month-by-month track record the monthly refresh appends to.
+    const hist = data.history || [];
+    if (hist.length) {
+      const rows = hist.map((h) => `<tr>
+        <td>${escapeHtml(h.month)}</td>
+        <td>${escapeHtml(h.bank_posture)}</td>
+        <td>${escapeHtml(h.fintech_lead)}</td>
+        <td>${escapeHtml(h.ignition)}</td>
+        <td>${escapeHtml(h.lean)}</td>
+      </tr>`).join("");
+      $("#prediction-scorecard").innerHTML = `
+        <h4 class="prediction-scorecard-title">Scorecard <span class="muted">(one row per monthly refresh)</span></h4>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Refresh</th><th>Bank posture</th><th>Fintech lead</th><th>Wave 2 ignition</th><th>Lean</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>`;
+    } else {
+      $("#prediction-scorecard").innerHTML =
+        `<p class="tab-intro">No scorecard rows yet — the monthly refresh appends one each run.</p>`;
+    }
+  }
+
+  // ------------------------------------------------------ ask the filings --
+
+  function initFilingsQa() {
+    const form = $("#filings-qa-form");
+    if (!form) return;
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      askFilings($("#filings-qa-input").value.trim());
+    });
+    $$("#filings-qa-examples .filings-qa-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        $("#filings-qa-input").value = chip.textContent;
+        askFilings(chip.textContent);
+      });
+    });
+  }
+
+  async function askFilings(question) {
+    if (!question) return;
+    const answerEl = $("#filings-qa-answer");
+    const sourcesEl = $("#filings-qa-sources");
+    const btn = $("#filings-qa-form").querySelector("button");
+    btn.disabled = true;
+    answerEl.innerHTML = `<p class="tab-intro">Searching the filings and answering…</p>`;
+    sourcesEl.innerHTML = "";
+    try {
+      const apiKey = $("#gemini_api_key").value.trim();
+      const res = await Api.filingsQa({ question, api_key: apiKey || null });
+      renderFilingsAnswer(res);
+    } catch (e) {
+      answerEl.innerHTML = `<p class="tab-intro">Could not answer: ${escapeHtml(e.message)}</p>`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  const STANCE_LABEL = { deploying: "Deploying", exploring: "Exploring", risk: "Risk / threat", unclear: "Unclear" };
+
+  function renderFilingsAnswer(res) {
+    // Turn the model's inline [n] markers into superscript pills so a citation
+    // reads as a citation, then render the rest as markdown.
+    const withPills = (res.answer || "").replace(/\[(\d+)\]/g,
+      (m, n) => `<sup class="cite-pill">${escapeHtml(n)}</sup>`);
+    $("#filings-qa-answer").innerHTML = marked.parse(withPills) +
+      `<p class="filings-qa-meta muted">Grounded in ${res.retrieved_count} of ${res.corpus_size} filing passages · every claim above cites its source below.</p>`;
+
+    const cited = new Set(res.cited_indices || []);
+    // Show cited sources first (they back the answer), then the rest as context.
+    const ordered = res.sources.slice().sort((a, b) =>
+      (cited.has(b.n) ? 1 : 0) - (cited.has(a.n) ? 1 : 0));
+    $("#filings-qa-sources").innerHTML = ordered.map((s) => {
+      const stanceBadge = s.stance
+        ? `<span class="stance-badge stance-${s.stance}">${escapeHtml(STANCE_LABEL[s.stance] || s.stance)}</span>` : "";
+      return `<div class="filings-src ${cited.has(s.n) ? "filings-src-cited" : ""}">
+        <div class="filings-src-head">
+          <span class="cite-pill">${s.n}</span>
+          <b>${escapeHtml(s.ticker)}</b>
+          <span class="muted">${escapeHtml(s.name)} · FY${escapeHtml(String(s.fiscal_year))} ${escapeHtml(s.form)}</span>
+          ${stanceBadge}
+          ${cited.has(s.n) ? "" : `<span class="filings-src-tag muted">retrieved, not cited</span>`}
+        </div>
+        <blockquote>${escapeHtml(s.quote)}</blockquote>
+      </div>`;
+    }).join("");
   }
 
   function renderOverviewStats(payload) {
@@ -662,6 +811,7 @@
     initSidebarToggle();
     initAiAssistant();
     initRobustnessAgent();
+    initFilingsQa();
     const status = await Api.status();
     initSidebar(status);
     await fetchIndex();

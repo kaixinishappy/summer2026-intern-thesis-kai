@@ -44,13 +44,12 @@ feed a given wave (Wave 1 now averages three, Wave 2 still averages two).
 > easier to defend to a non-technical audience — "this turning point holds no
 > matter how we set the knobs" beats "F = 17.3."
 
-Three standalone checks ask whether the headline findings survive beyond the
+Two standalone checks ask whether the headline findings survive beyond the
 hand-picked sample and the specific method:
 `collect_edgar_marketwide.py` reruns the EDGAR "agentic" query with no company
 filter across every SEC 10-K filer; `collect_market_marketwide.py` compares a
 fintech-sector ETF (FINX) against a bank-sector ETF (KBWB) instead of the 7
-tickers, **and** benchmarks the fintech basket against growth ETFs (QQQ, ARKK) to
-separate a fintech-specific decline from the 2022 growth-stock selloff. None feed
+tickers. Neither feeds
 into the composite FDI — they're validation charts, not additional index inputs.
 
 ## Repository layout
@@ -72,6 +71,11 @@ into the composite FDI — they're validation charts, not additional index input
 ├── ai_assistant.py        # Gemini research assistant: live summary + Q&A, used by app.py
 ├── robustness_agent.py    # tool-using Gemini agent: red-teams the headline
 │                          #   breaks by choosing its own parameter checks
+├── filings_qa.py          # "Ask the filings": grounded Q&A over the real SEC
+│                          #   filing passages, every claim cited to a quote
+├── predictions.py         # scores the standing prediction (PREDICTIONS.md)
+│                          #   against fresh pipeline output, one row per refresh
+├── PREDICTIONS.md         # the frozen, falsifiable forecast + its scorecard
 ├── data/
 │   ├── raw/                   # prices.csv, fundamentals.csv, indexed_performance.csv,
 │   │                          # market_marketwide.csv, wave1_trends.csv, wave2_trends.csv,
@@ -81,6 +85,7 @@ into the composite FDI — they're validation charts, not additional index input
 ├── charts/                # per-collector charts + the three headline charts (*.png)
 ├── output/                # fdi.csv, break_results.json (from build_index.py)
 ├── VERDICT.md             # written verdict
+├── PREDICTIONS.md         # standing prediction + self-scored scorecard
 └── README.md
 ```
 
@@ -194,6 +199,37 @@ turning point). Writes `output/fdi.csv` and `output/break_results.json`.
 **`make_charts.py`** — reads `output/fdi.csv` + `break_results.json` and
 renders the three headline charts into `charts/`.
 
+**`filings_qa.py`** — "Ask the filings": grounded question-answering over the
+actual SEC filing passages (`edgar_passages.csv`, or the richer
+`edgar_stance.csv` when the classify stage has run). Where `ai_assistant.py`
+grounds Gemini in the *computed numbers*, this grounds it in *primary-source
+text*: it retrieves the most relevant passages (simple lexical scoring — the
+corpus is a few dozen short passages, so embeddings would be machinery without
+benefit) and answers strictly from them, citing every claim with a `[n]` that
+resolves to a verbatim quote, company, and fiscal year. The model is instructed
+to answer only from the supplied passages and to say the filings don't cover
+something rather than fill the gap from open-web knowledge — so the answer
+can't drift off the source. Exposed in the dashboard's Robustness tab (needs a
+Gemini key); also runnable as `python filings_qa.py "your question"`.
+
+**`predictions.py` / `PREDICTIONS.md`** — makes the thesis *falsifiable*.
+VERDICT.md ends with a prediction, not a finding ("banks can absorb the AI wave
+the way they absorbed the first"). `PREDICTIONS.md` freezes that as an explicit
+claim with named *confirming* / *breaking* signals; `predictions.py` reads the
+current state of each signal off the pipeline's own output (`break_results.json`
++ `edgar_stance.csv` — no new collection), decides which way the observable
+evidence leans (`✅ Holding` / `⚠️ Watch` / `❌ Contrary`), and upserts one dated
+row into the scorecard. The two load-bearing signals are the banks'
+governance-first posture (do they still frame agentic AI mostly as *risk to
+govern*?) and the deployment split (are the fintechs the ones actually
+*deploying* it?); Wave 2 "ignition" is tracked as context only, since an
+ignition banks can see coming is *consistent* with the claim. The honest blind
+spot — a *private* AI-native challenger, invisible to this public-company sample
+— is stated on the card rather than quietly dropped. The monthly refresh runs
+this after `build_index.py`, so the forecast is audited against fresh data over
+time instead of sitting frozen in prose. Standalone: `python predictions.py`
+(add `--print-only` to see the reading without writing the scorecard).
+
 ## Quick start
 
 ```bash
@@ -263,7 +299,7 @@ organised as the project's stages, left to right:
 3. **Turning Points** — PELT-detected turning points, each with a direction
    (slowdown / acceleration) and a stability score.
 4. **Robustness Checks** — the sector-ETF and market-wide EDGAR generalization
-   checks, the growth-benchmark macro-confound control, the agentic-language
+   checks, the agentic-language
    **stance panel** (if `classify_filings.py` has been run): a per-company
    deploying / exploring / risk count table covering every passage, then the
    passages themselves with the verbatim filing quote behind each label —
@@ -271,11 +307,15 @@ organised as the project's stages, left to right:
    contrasts) with the exploratory / unclear ones one click away, degrading to
    a "not yet classified" hint if `edgar_stance.csv` is absent; and a
    **"Run robustness agent"** button (`robustness_agent.py`) that runs a live
-   tool-using LLM red-team of the headline breaks (see below).
+   tool-using LLM red-team of the headline breaks (see below); and an
+   **"Ask the filings"** box (`filings_qa.py`) — grounded Q&A over the real
+   filing passages, with a verbatim quote cited behind every claim.
 5. **Converging Evidence** — every signal on one z-scored, smoothed scale, so
    the reader can see the independent sources agree on the two turning points.
-6. **Verdict & AI Assistant** — `VERDICT.md` + README findings, plus the Gemini
-   summary and Q&A.
+6. **Verdict & AI Assistant** — the **standing-prediction scorecard**
+   (`predictions.py` / `PREDICTIONS.md`) with its current lean and month-by-month
+   track record, then `VERDICT.md` + README findings, plus the Gemini summary
+   and Q&A.
 
 The endpoints import `build_indices()` and `run_break_analysis()` straight from
 `build_index.py` (which accepts `momentum_window`/`pelt_penalty` overrides,
@@ -431,8 +471,6 @@ The disruptors had a real, dramatic run in 2020-2021: Block up nearly 8x, PayPal
 **Market-share proxy** (`data/raw/fundamentals.csv` revenue column, Data Collection tab): the thesis question is literally about *market share*, which stock price only proxies (a stock can fall while the business keeps growing). Fintech's share of the combined (fintech + legacy) **revenue** pool went **19.4% (2022) → 19.5% → 20.3% → 20.3% (2025)** — essentially flat. Even as the fintechs returned to profit, they stopped taking ground: consistent with "Wave 1 has matured", and a more direct read on the thesis than price. Thin by construction (yfinance exposes ~4 fiscal years), so it's a recent snapshot, not a long history.
 
 **Generalization check** (`collect_market_marketwide.py`, `data/raw/market_marketwide.csv`, `charts/market_marketwide.png`) asks Part 2's EDGAR question of the price signal: is "fintech rose then rolled over" a fact about the 7 picked tickers, or the sector? FINX (fintech-sector ETF) relative to KBWB (bank-sector ETF) peaked at **233** (rebased to 100 at 2018) in **September 2020**, then fell to **56** by July 2026, below its 2018 start. The 7-ticker sample peaked at **519** the same month and sits at **73** by July 2026, also below start. Different amplitude, same shape, same turning point, found independently: the "fintech's win didn't hold" story isn't an artifact of which 7 companies got picked.
-
-**Macro-confound control** (`collect_market_marketwide.py`, QQQ/ARKK, Robustness tab): the obvious objection to "fintech rolled over ~2021" is that *every* unprofitable growth stock sold off in 2022's rate-hike cycle. The FINX/KBWB check above rules out "just the 7 tickers"; this rules out "just the growth selloff." Benchmarked against **QQQ** (Nasdaq-100 growth), the fintech basket peaked at **205** (Dec 2020) and fell to **63** by July 2026 — it underperformed even the broad growth market by ~37% over the period, so the decline is fintech-specific, not the whole growth tide going out. The one honest nuance: against **ARKK** (the most speculative disruptive-growth basket) fintech held up (ending ~142), i.e. it beat the *riskiest* growth bucket while losing to the mainstream one.
 
 **What this can't confirm:** whether banks won by copying features or acquiring challengers is plausible but untested here; there's no product-feature or M&A data in this project. Treat that mechanism as outside knowledge, not a finding.
 

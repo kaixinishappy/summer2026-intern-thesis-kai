@@ -33,6 +33,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import ai_assistant
+import filings_qa
+import predictions
 import robustness_agent
 from build_index import (
     DATA_DIR,
@@ -331,19 +333,6 @@ def robustness_checks():
     sample_ratio = relative_strength(prices, FINTECH_TICKERS, LEGACY_TICKERS)
     etf_ratio = relative_strength(etf, ["FINX"], ["KBWB"])
 
-    # Macro-confound control: fintech basket vs. growth benchmarks (QQQ/ARKK),
-    # to separate "fintech specifically lost" from "all growth stocks fell in
-    # 2022". Combined into one frame so relative_strength() can pivot fintech
-    # tickers (from prices.csv) against a benchmark (from market_marketwide.csv).
-    combined = pd.concat([prices[["Date", "ticker", "close"]],
-                          etf[["Date", "ticker", "close"]]], ignore_index=True)
-    macro_control = {}
-    for bench in ("QQQ", "ARKK"):
-        if bench in etf["ticker"].values:
-            rs = relative_strength(combined, FINTECH_TICKERS, [bench])
-            if rs is not None:
-                macro_control[bench] = _series_to_records(rs, "date", "value")
-
     _require_file(EDGAR_MARKETWIDE_CSV)
     marketwide = pd.read_csv(EDGAR_MARKETWIDE_CSV)
     mw_agentic = marketwide[marketwide["query"] == "agentic"][["year", "total_filings"]].sort_values("year")
@@ -361,10 +350,6 @@ def robustness_checks():
             "etf_indexed": _records(etf_monthly.rename(columns={"Date": "date", "indexed": "value"})),
             "sample_ratio": _series_to_records(sample_ratio, "date", "value"),
             "etf_ratio": _series_to_records(etf_ratio, "date", "value"),
-        },
-        "macro_control": {
-            "sample_ratio_vs_legacy": _series_to_records(sample_ratio, "date", "value"),
-            "vs_benchmark": macro_control,
         },
         "edgar_marketwide": {
             "marketwide_agentic": _records(mw_agentic),
@@ -444,6 +429,22 @@ def verdict():
 
 
 # --------------------------------------------------------------------------- #
+# standing prediction scorecard -- reads the current lean off the pipeline's own
+# committed output (break_results.json + edgar_stance.csv) plus the historical
+# scorecard rows the monthly refresh has appended to PREDICTIONS.md, so the
+# dashboard can show the forecast being audited against fresh data over time.
+# Pure read; never recomputes or re-collects (see predictions.evaluate()).
+# --------------------------------------------------------------------------- #
+
+@app.get("/api/predictions")
+def get_predictions():
+    return {
+        "reading": predictions.evaluate(),
+        "history": predictions.read_scorecard_rows(),
+    }
+
+
+# --------------------------------------------------------------------------- #
 # AI research assistant (Gemini) -- grounded in the exact df/breaks the
 # caller supplies, exactly like app.py's slider-driven recompute
 # --------------------------------------------------------------------------- #
@@ -513,6 +514,37 @@ def ai_chat(req: AIChatRequest):
         )),
         media_type="text/event-stream", headers=_SSE_HEADERS,
     )
+
+
+# --------------------------------------------------------------------------- #
+# "Ask the filings" -- grounded Q&A over the actual SEC filing passages
+# (filings_qa.py). Distinct from /api/ai/* above: those ground Gemini in the
+# COMPUTED numbers; this grounds it in PRIMARY-SOURCE filing text and returns a
+# citation (verbatim quote + company + fiscal year) behind every claim, so the
+# answer can't drift off the filings. Not synthetic-aware -- there is no
+# fabricated filing text; it degrades to a clear 4xx when no passages exist.
+# --------------------------------------------------------------------------- #
+
+class FilingsQARequest(BaseModel):
+    question: str
+    k: int = filings_qa.DEFAULT_K
+    api_key: str | None = None
+
+
+@app.post("/api/filings-qa")
+def filings_qa_answer(req: FilingsQARequest):
+    api_key = _resolve_api_key(req.api_key)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="No Gemini API key configured.")
+    # Bound k to a sane range so a hand-crafted request can't ask for an
+    # enormous (or empty) retrieval set.
+    k = max(1, min(int(req.k), 12))
+    try:
+        return filings_qa.answer(req.question, api_key, k=k)
+    except ValueError as e:  # empty question / no passages indexed
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 # --------------------------------------------------------------------------- #

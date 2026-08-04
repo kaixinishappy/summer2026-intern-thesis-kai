@@ -155,10 +155,25 @@
         <div id="edgar-stance-passages"></div>
       </div>
 
-      <div class="card">
-        <h3>Macro-confound control <span class="muted">(fintech vs. growth benchmarks, not just banks)</span></h3>
-        <p class="tab-intro">The obvious objection to "fintech rolled over ~2021" is that <i>every</i> unprofitable growth stock sold off in 2022's rate-hike cycle — so this may say nothing fintech-specific. This checks it: the fintech basket's strength relative to <b>QQQ</b> (broad Nasdaq-100 growth) and <b>ARKK</b> (speculative disruptive growth). If fintech underperforms even these, the decline is fintech-specific, not just the growth-stock tide going out.</p>
-        <div id="chart-macro-control" class="chart chart-tall"></div>
+      <div class="card filings-qa-card">
+        <div class="ai-header">
+          <span class="ai-avatar" aria-hidden="true">🔎</span>
+          <div class="ai-header-text">
+            <h3>Ask the filings <span class="badge-ai">grounded · cited</span></h3>
+            <p class="ai-subtitle">Ask a question and get an answer built <b>only</b> from the companies' own SEC filing passages — every claim cites the verbatim quote, company, and fiscal year it came from, so it can't drift off the source. Needs a Gemini key (sidebar).</p>
+          </div>
+        </div>
+        <form id="filings-qa-form" class="chat-form">
+          <input type="text" id="filings-qa-input" placeholder="e.g. How do the banks describe agentic AI risk?" autocomplete="off">
+          <button type="submit" class="btn btn-primary chat-send">Ask</button>
+        </form>
+        <div class="filings-qa-examples" id="filings-qa-examples">
+          <button type="button" class="filings-qa-chip">How do the banks describe agentic AI risk?</button>
+          <button type="button" class="filings-qa-chip">Which companies say they are deploying AI agents?</button>
+          <button type="button" class="filings-qa-chip">Does anyone frame AI as a growth opportunity?</button>
+        </div>
+        <div id="filings-qa-answer" class="filings-qa-answer"></div>
+        <div id="filings-qa-sources" class="filings-qa-sources"></div>
       </div>
 
       <div class="card agent-card">
@@ -183,8 +198,6 @@
           <span class="agent-flow-loop" title="the agent repeats this loop for a few checks">↻ repeats</span>
         </div>
 
-        <p class="agent-note">Checks stay inside the sidebar's slider bounds and are capped so a run stays cheap. Watch it choose its checks below.</p>
-
         <p class="control-hint" id="agent-hint"></p>
         <div id="agent-trace"></div>
         <div id="agent-verdict"></div>
@@ -203,6 +216,17 @@
 
     <section id="tab-verdict" class="tab-panel">
       <div class="stat-row" id="overview-stats"></div>
+
+      <div class="card prediction-card">
+        <div class="prediction-head">
+          <h3>Standing prediction <span class="badge-ai">falsifiable · self-scored</span></h3>
+          <span id="prediction-lean" class="prediction-lean">…</span>
+        </div>
+        <blockquote id="prediction-claim" class="prediction-claim"></blockquote>
+        <div class="prediction-signals" id="prediction-signals"></div>
+        <p class="prediction-blindspot" id="prediction-blindspot"></p>
+        <div class="prediction-scorecard" id="prediction-scorecard"></div>
+      </div>
 
       <div class="card">
         <h3>Written verdict</h3>

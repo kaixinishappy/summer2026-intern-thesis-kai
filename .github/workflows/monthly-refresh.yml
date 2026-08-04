@@ -101,6 +101,13 @@ jobs:
       - name: Generate charts
         run: python make_charts.py
 
+      # Scores the standing prediction (PREDICTIONS.md) against this refresh's
+      # freshly rebuilt break_results.json + the committed edgar_stance.csv, and
+      # upserts one dated row into the scorecard. Pure read of pipeline output;
+      # can't fail for a data-collection reason the steps above wouldn't have.
+      - name: Update standing-prediction scorecard
+        run: python predictions.py
+
       - name: Configure git identity
         run: |
           git config user.name "github-actions[bot]"
@@ -111,7 +118,7 @@ jobs:
         run: |
           BRANCH="monthly-data-refresh"
           git checkout -b "$BRANCH"
-          git add data output charts
+          git add data output charts PREDICTIONS.md
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else

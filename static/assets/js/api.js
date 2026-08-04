@@ -75,8 +75,10 @@ const Api = (() => {
     robustnessChecks: () => get("/api/robustness-checks"),
     convergence: (params) => get("/api/convergence", params),
     verdict: () => get("/api/verdict"),
+    predictions: () => get("/api/predictions"),
     aiSummaryStream: (body, onEvent) => stream("/api/ai/summary", body, onEvent),
     aiChatStream: (body, onEvent) => stream("/api/ai/chat", body, onEvent),
     robustnessAgent: (body) => post("/api/robustness-agent", body),
+    filingsQa: (body) => post("/api/filings-qa", body),
   };
 })();

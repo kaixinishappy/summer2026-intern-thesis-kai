@@ -212,25 +212,6 @@ const Charts = (() => {
     }), config);
   }
 
-  function macroControl(divId, data) {
-    const line = (recs) => ({ x: recs.map((r) => r.date), y: recs.map((r) => r.value) });
-    const traces = [
-      { ...line(data.sample_ratio_vs_legacy), name: "vs. banks (JPM/HSBC/BCS)", type: "scatter", mode: "lines", line: { color: cssVar("--wave1"), width: 2.4 } },
-    ];
-    const benchColors = { QQQ: cssVar("--series-violet"), ARKK: cssVar("--series-aqua") };
-    const benchLabel = { QQQ: "vs. QQQ (Nasdaq-100 growth)", ARKK: "vs. ARKK (speculative growth)" };
-    for (const b of ["QQQ", "ARKK"]) {
-      if (data.vs_benchmark[b]) {
-        traces.push({ ...line(data.vs_benchmark[b]), name: benchLabel[b], type: "scatter", mode: "lines", line: { color: benchColors[b], width: 2, dash: "dash" } });
-      }
-    }
-    Plotly.react(divId, traces, baseLayout({
-      yaxis: { title: "Fintech relative strength (start = 100)", gridcolor: cssVar("--gridline"), zerolinecolor: cssVar("--baseline") },
-      shapes: [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 100, y1: 100, line: { color: cssVar("--baseline"), width: 1, dash: "dot" } }],
-      annotations: [{ xref: "paper", x: 0.01, y: 100, yanchor: "bottom", text: "100 = fintech keeps pace", showarrow: false, font: { size: 10, color: cssVar("--text-muted") } }],
-    }), config);
-  }
-
   // Warm hues for Wave 1 signals, cool for Wave 2 -- so the two groups read as
   // two groups at a glance, which is the whole point of the convergence view.
   const CONVERGENCE_COLORS = {
@@ -260,6 +241,6 @@ const Charts = (() => {
   return {
     twoWave, momentum, singleSeries, indexedPerformance, trendsComparison,
     edgarYearly, marketMarketwide, edgarMarketwide,
-    revenueShare, macroControl, convergence, cssVar,
+    revenueShare, convergence, cssVar,
   };
 })();
