@@ -295,7 +295,7 @@ def edgar_stance():
     summary.sort(key=lambda r: order.get(r["ticker"], len(order)))
 
     passage_cols = ["ticker", "name", "category", "fiscal_year", "form",
-                    "stance", "subject", "quote", "rationale", "passage"]
+                    "passage_idx", "stance", "subject", "quote", "rationale", "passage"]
     passages = df[[c for c in passage_cols if c in df.columns]]
 
     return {

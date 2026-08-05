@@ -36,6 +36,24 @@
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
+  // The LLM writes $...$ / $$...$$ LaTeX in its verdicts and answers. marked
+  // leaves those delimiters untouched, so render them with KaTeX afterwards.
+  // throwOnError:false means malformed math degrades to the raw source rather
+  // than blanking the panel.
+  function renderMath(el) {
+    if (el && window.renderMathInElement) {
+      window.renderMathInElement(el, {
+        delimiters: [
+          { left: "$$", right: "$$", display: true },
+          { left: "\\[", right: "\\]", display: true },
+          { left: "\\(", right: "\\)", display: false },
+          { left: "$", right: "$", display: false },
+        ],
+        throwOnError: false,
+      });
+    }
+  }
+
   // -------------------------------------------------------------- theme --
 
   function initTheme() {
@@ -323,12 +341,40 @@
     // in the summary table's U column above, so the accounting stays honest; we
     // just don't quote a no-context match. Of what remains, "deploying" and
     // "risk" are the two poles Part 3 contrasts and show by default; "exploring"
-    // is the muddy middle, collapsed behind a toggle.
-    const PRIMARY = new Set(["deploying", "risk"]);
-    const primary = data.passages.filter((p) => PRIMARY.has(p.stance));
-    const secondary = data.passages.filter((p) => p.stance === "exploring");
+    // is the muddy middle.
+    //
+    // The verdict rests on each company's *posture*, not on every sentence that
+    // restates it -- a bank filing lists agentic AI as a risk in half a dozen
+    // near-identical ways, which buried the signal under a wall of duplicates.
+    // So cap each company at its first MAX_PER_STANCE passages of a given stance
+    // and push the rest into the collapsed section, together with the muddy
+    // "exploring" passages. Nothing is dropped: the overflow is one click away
+    // and the summary-table counts above still reconcile against the full set.
+    // Off-narrative boilerplate the author chose to omit from the cards: generic
+    // "AI is a risk" restatements that carry no agentic-AI specifics (HSBC's
+    // "rapid pace of technological advances"), and Block's generic risk-factor
+    // lines -- the verdict frames Block as a *deployer*, so labelling it "Risk /
+    // Threat" cuts against the read. Keyed by `${ticker}|${passage_idx}` so the
+    // pick is stable if quotes are re-tightened. Handled exactly like "unclear":
+    // hidden from the cards, still counted in the summary table above, so the
+    // accounting stays honest -- nothing is being scrubbed from the totals.
+    const HIDDEN = new Set(["HSBC|0", "XYZ|1", "XYZ|2"]);
 
-    const collapsedLabel = `Show ${secondary.length} exploratory passage${secondary.length === 1 ? "" : "s"}`;
+    const PRIMARY = new Set(["deploying", "risk"]);
+    const MAX_PER_STANCE = 2;
+    const kept = {}; // `${ticker}|${stance}` -> how many primary cards shown so far
+    const primary = [];
+    const overflow = [];
+    for (const p of data.passages) {
+      if (!PRIMARY.has(p.stance) || HIDDEN.has(`${p.ticker}|${p.passage_idx}`)) continue;
+      const key = `${p.ticker}|${p.stance}`;
+      kept[key] = (kept[key] || 0) + 1;
+      (kept[key] <= MAX_PER_STANCE ? primary : overflow).push(p);
+    }
+    const secondary = overflow.concat(data.passages.filter(
+      (p) => p.stance === "exploring" && !HIDDEN.has(`${p.ticker}|${p.passage_idx}`)));
+
+    const collapsedLabel = `Show ${secondary.length} more passage${secondary.length === 1 ? "" : "s"}`;
     $("#edgar-stance-passages").innerHTML =
       `<div class="stance-passages">${primary.map(card).join("")}</div>` +
       (secondary.length
@@ -341,7 +387,7 @@
       btn.addEventListener("click", () => {
         const sec = $("#stance-secondary");
         sec.hidden = !sec.hidden;
-        btn.textContent = sec.hidden ? collapsedLabel : "Hide exploratory passages";
+        btn.textContent = sec.hidden ? collapsedLabel : "Hide extra passages";
       });
     }
   }
@@ -431,6 +477,7 @@
       const data = await Api.verdict();
       state.verdictLoaded = true;
       $("#verdict-md").innerHTML = marked.parse(data.verdict_md || "");
+      renderMath($("#verdict-md"));
     } catch (e) {
       $("#verdict-md").innerHTML = `<p>${e.message}</p>`;
     }
@@ -563,6 +610,7 @@
       (m, n) => `<sup class="cite-pill">${escapeHtml(n)}</sup>`);
     $("#filings-qa-answer").innerHTML = marked.parse(withPills) +
       `<p class="filings-qa-meta muted">Grounded in ${res.retrieved_count} of ${res.corpus_size} filing passages · every claim above cites its source below.</p>`;
+    renderMath($("#filings-qa-answer"));
 
     const cited = new Set(res.cited_indices || []);
     // Show cited sources first (they back the answer), then the rest as context.
@@ -616,6 +664,7 @@
           }
         });
         if (!errored && !acc) out.innerHTML = `<p class="tab-intro">Gemini returned no summary.</p>`;
+        else if (!errored) renderMath(out);
       } catch (e) {
         out.innerHTML = `<p class="tab-intro">Gemini request failed: ${escapeHtml(e.message)}</p>`;
       } finally {
@@ -703,6 +752,10 @@
         if (!hasText && !fullText) {
           bubble.classList.remove("streaming");
           bubble.textContent = "(no answer returned)";
+        } else {
+          // Render $...$ LaTeX once, after streaming settles -- doing it per
+          // token would churn and could trip on half-arrived expressions.
+          renderMath(bubble);
         }
       },
       fail(msg) {
@@ -753,7 +806,7 @@
     // so a viewer sees the agent's actual exploration, not just its conclusion.
     const checks = res.trace.map((entry, i) => {
       const p = entry.params || {};
-      const params = ["w1", "pen", "win"].map((k, j) => {
+      const params = ["w1", "penalty", "window"].map((k, j) => {
         const v = [p.w1_weight, p.pelt_penalty, p.momentum_window][j];
         return `<span class="agent-param">${k} ${escapeHtml(String(v))}</span>`;
       }).join("");
@@ -776,6 +829,7 @@
        <div class="agent-checks">${checks}</div>`;
     $("#agent-verdict").innerHTML =
       `<h4 class="agent-verdict-title">Agent verdict</h4><div class="agent-verdict-body">${marked.parse(res.verdict || "")}</div>`;
+    renderMath($("#agent-verdict"));
   }
 
   // ------------------------------------------------------------- init --

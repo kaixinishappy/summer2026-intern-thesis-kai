@@ -44,5 +44,5 @@ row per month; a re-run in the same month replaces its row). Newest at the botto
 | Refresh | Bank posture (risk / deploy) | Fintech deploy lead | Wave 2 ignition (attention) | Lean |
 |---------|------------------------------|---------------------|-----------------------------|------|
 <!-- SCORECARD:ROWS:START -->
-| 2026-08 | governance-first (10 risk / 0 deploy) | yes (2 vs 0) | 95% (robust) | ✅ Holding |
+| 2026-08 | governance-first | yes | 95% (robust) | ✅ Holding |
 <!-- SCORECARD:ROWS:END -->

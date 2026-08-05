@@ -319,6 +319,7 @@ p { line-height: 1.5; }
 .agent-sub {
   margin: 0.4rem 0 0; font-size: 0.85rem; line-height: 1.5;
   color: var(--text-secondary); max-width: 60ch;
+  text-align: justify;
 }
 .badge-ai {
   font-size: 0.62rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;

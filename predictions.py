@@ -221,14 +221,14 @@ def _cell_bank_posture(posture: dict | None) -> str:
     if posture is None:
         return "not classified"
     verb = "governance-first" if posture["banks_governing"] else "deploying"
-    return f"{verb} ({posture['bank_risk']} risk / {posture['bank_deploy']} deploy)"
+    return verb
 
 
 def _cell_fintech_lead(posture: dict | None) -> str:
     if posture is None:
         return "not classified"
     yn = "yes" if posture["fintech_leads_deploying"] else "no"
-    return f"{yn} ({posture['fintech_deploy']} vs {posture['bank_deploy']})"
+    return yn
 
 
 def _cell_ignition(ignition: float | None, note: str | None) -> str:
