@@ -133,11 +133,6 @@ export GEMINI_API_KEY="your-ai-studio-key"
 uvicorn server:app --reload
 ```
 
-## Findings
-
-The full evidence behind [VERDICT.md](VERDICT.md)'s verdict, split into the same
-three parts.
-
 ## Key results
 
 The following results are from the committed real-data analysis at the default
