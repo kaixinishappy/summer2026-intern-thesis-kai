@@ -37,6 +37,19 @@ Two standalone checks test generalisability without entering the composite FDI:
 seven tickers, and `collect_edgar_marketwide.py` repeats the agentic-AI query
 across all SEC 10-K filers.
 
+## Tech stack
+
+- **Language and analysis:** Python, pandas, NumPy, SciPy, statsmodels, and
+  `ruptures` (PELT change-point detection).
+- **Data sources and collection:** Yahoo Finance via `yfinance`, Google Trends
+  via `pytrends`, and SEC EDGAR full-text search via `requests`.
+- **Visualisation:** Matplotlib for generated charts; Plotly with plain
+  HTML/CSS/JavaScript for the interactive dashboard.
+- **Web application:** FastAPI and Uvicorn.
+- **AI features:** Google Gemini via `google-genai`, with environment loading
+  through `python-dotenv`.
+- **Automation:** GitHub Actions creates a monthly refresh pull request.
+
 ## Repository layout
 
 ```
@@ -125,6 +138,28 @@ uvicorn server:app --reload
 The full evidence behind [VERDICT.md](VERDICT.md)'s verdict, split into the same
 three parts.
 
+## Key results
+
+The following results are from the committed real-data analysis at the default
+50/50 composite weighting:
+
+- **Wave 1 slowdown:** PELT identifies a slowdown in April 2021. It appears in
+  15 of 20 penalty × momentum-window settings (**75% stability**).
+- **Wave 2 acceleration:** PELT identifies an acceleration in June 2025. It
+  appears in 19 of 20 settings (**95% stability**), but the short observation
+  window means this is early evidence, not proof of a lasting disruption.
+- **Composite FDI:** The June 2025 acceleration is stable across 15 of 20
+  settings (**75%**). The April 2021 composite slowdown is only 35% stable, so
+  the sub-indices should be interpreted alongside the composite.
+- **Revenue-share proxy:** The fintech basket's share of the combined sampled
+  fintech-and-bank revenue pool was broadly flat, moving from about **19.4% in
+  2022** to **20.3% in 2025**. This is a sample-level proxy, not total industry
+  market share.
+- **Filing posture:** In the analysed passages, PayPal and Block describe AI
+  agent deployment, while the large banks mainly frame agentic AI in terms of
+  governance and risk. The inference that banks will absorb the AI wave is a
+  **prediction**, not an empirical finding.
+
 ## Limitations
 
 - **Proxies, not ground truth.** Search interest measures attention, not
@@ -165,4 +200,3 @@ three parts.
   model. It is meant to add a qualitative axis the keyword count can't, not to
   carry the same weight as the count itself. The `unclear` labels (2 of 19,
   both Barclays) mark passages the model itself declined to call.
-
