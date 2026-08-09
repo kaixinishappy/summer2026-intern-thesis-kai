@@ -1,13 +1,12 @@
-# Fintech Two-Wave Disruption Index
+# Fintech Disruption of Traditional Banking
 
-Empirically testing whether fintech disruption of traditional banking has run its
-course, or whether a **second wave of AI-native financial services** is only now
-beginning.
+This thesis examines whether the first wave of fintech disruption—digital
+payments, neobanks, and embedded finance—has matured, or whether a second wave
+of AI-native financial services is beginning.
 
-Rather than asking the trivial question ("did fintech disrupt banking?" — yes),
-this project looks for **two separate turning points**: the maturation of
-Wave 1 (payments, neobanks, embedded finance) and the onset of Wave 2 (AI-native
-underwriting and advisory).
+It does not treat a single metric as proof. It combines market performance,
+profitability, search interest, and regulatory disclosures, then tests whether
+the resulting turning points survive alternative modelling choices.
 
 ## How it works
 
@@ -26,31 +25,15 @@ and combined into a **Fintech Disruption Index (FDI)** with two sub-indices:
 - **Wave 2 sub-index** = Wave-2 search interest + EDGAR AI intensity
 - **Composite FDI** = weighted blend (weight configurable)
 
-Turning points are detected on each sub-index's **12-month momentum** using
-PELT (`ruptures`). Instead of attaching a p-value to each one, every turning
-point is scored for **stability**: the share of a parameter grid (penalty ×
-momentum window) that also finds it. A turning point that survives most settings
-is a real regime change; one that only appears at a single exact setting is
-fragile. Each sub-index is re-standardised to unit variance after averaging its
-inputs, so PELT's penalty means the same thing regardless of how many raw signals
-feed a given wave (Wave 1 now averages three, Wave 2 still averages two).
+Turning points are detected on each sub-index's 12-month momentum with PELT
+(`ruptures`). Each is assigned a stability score: the share of a penalty ×
+momentum-window grid that also identifies it. This distinguishes robust regime
+changes from breaks that only occur under one exact parameter setting.
 
-> **Why not a Chow test?** An earlier version ran a classical Chow test at each
-> PELT-detected break and reported an F-stat / p-value. That was dropped: the
-> break date is *estimated* from the same data the Chow test then evaluates
-> (textbook pre-test bias, so the p-values overstated significance), and the
-> 12-month momentum transform induces serial correlation that violates the test's
-> iid assumption. The stability sweep needs no distributional assumption and is
-> easier to defend to a non-technical audience — "this turning point holds no
-> matter how we set the knobs" beats "F = 17.3."
-
-Two standalone checks ask whether the headline findings survive beyond the
-hand-picked sample and the specific method:
-`collect_edgar_marketwide.py` reruns the EDGAR "agentic" query with no company
-filter across every SEC 10-K filer; `collect_market_marketwide.py` compares a
-fintech-sector ETF (FINX) against a bank-sector ETF (KBWB) instead of the 7
-tickers. Neither feeds
-into the composite FDI — they're validation charts, not additional index inputs.
+Two standalone checks test generalisability without entering the composite FDI:
+`collect_market_marketwide.py` compares FINX with KBWB rather than the selected
+seven tickers, and `collect_edgar_marketwide.py` repeats the agentic-AI query
+across all SEC 10-K filers.
 
 ## Repository layout
 
@@ -67,12 +50,14 @@ into the composite FDI — they're validation charts, not additional index input
 │                          #   deploying / exploring / risk (sharpens Part 3)
 ├── build_index.py         # builds sub-indices + composite, runs break tests
 ├── make_charts.py         # the three headline charts (reads output/, writes charts/)
-├── app.py                 # Streamlit app: live sliders, recomputes in real time
-├── ai_assistant.py        # Gemini research assistant: live summary + Q&A, used by app.py
+├── server.py              # FastAPI server for the interactive dashboard
+├── static/                # HTML, CSS, and JavaScript dashboard frontend
+├── ai_assistant.py        # Gemini research assistant: live summary + Q&A
 ├── robustness_agent.py    # tool-using Gemini agent: red-teams the headline
 │                          #   breaks by choosing its own parameter checks
 ├── filings_qa.py          # "Ask the filings": grounded Q&A over the real SEC
 │                          #   filing passages, every claim cited to a quote
+├── gemini_client.py       # shared Gemini client, retry, and timeout handling
 ├── predictions.py         # scores the standing prediction (PREDICTIONS.md)
 │                          #   against fresh pipeline output, one row per refresh
 ├── PREDICTIONS.md         # the frozen, falsifiable forecast + its scorecard
@@ -83,445 +68,56 @@ into the composite FDI — they're validation charts, not additional index input
 │   │                          # edgar_passages.csv, edgar_stance.csv
 │   └── processed/             # trends_yearly.csv
 ├── charts/                # per-collector charts + the three headline charts (*.png)
-├── output/                # fdi.csv, break_results.json (from build_index.py)
+├── output/                # fdi.csv, break_results.json, robustness reports
 ├── VERDICT.md             # written verdict
-├── PREDICTIONS.md         # standing prediction + self-scored scorecard
 └── README.md
 ```
 
-## What each file does
-
-**`collect_market_data.py`** — pulls daily close prices (via `yfinance`, since
-2018) and annual net income for 7 tickers split into three categories:
-`traditional_bank` (JPM, HSBC, BCS), `neobank` (SOFI, NU), `embedded_finance`
-(PYPL, XYZ). Rebases every ticker's price series to 100 at its start date so
-wildly different price levels are comparable on one axis, and writes:
-- `data/raw/prices.csv` — daily close, long format
-- `data/raw/fundamentals.csv` — annual net income per company (feeds
-  `build_index.py`'s Wave 1 profitability signal, below)
-- `data/raw/indexed_performance.csv` — the rebased-to-100 series
-- `charts/indexed_performance.png`
-
-**`collect_market_marketwide.py`** — checks the price story against a
-market-wide baseline: FINX (fintech-sector ETF) vs. KBWB (bank-sector ETF),
-instead of the 7 hand-picked tickers. Standalone generalization check, not
-fed into the composite. Writes:
-- `data/raw/market_marketwide.csv` — ETF daily close, rebased-to-100
-- `charts/market_marketwide.png` — ETF indexed prices + 7-ticker-sample vs.
-  ETF relative-strength overlay
-
-**`collect_trends.py`** — pulls Google Trends search-interest (via `pytrends`)
-for two term groups: Wave 1 ("neobank", "digital bank app", "mobile banking")
-and Wave 2 ("AI agent finance", "agentic AI banking", "autonomous wealth
-management"), weekly since 2018. Aggregates to yearly averages and writes:
-- `data/raw/wave1_trends.csv`, `data/raw/wave2_trends.csv` — weekly, per term
-- `data/processed/trends_yearly.csv` — yearly average, long format
-- `charts/trends_comparison.png`
-
-**`collect_edgar.py`** — queries SEC EDGAR's full-text search API for how
-often each company's annual filing (10-K, or 20-F for HSBC, Barclays, and
-Nubank — all three are foreign private issuers) matches two query sets per
-year since 2019: `"agentic"` (the "AI agent" / "agentic AI" phrase
-family — near-zero until it isn't) and `"ai_broad"` (`"artificial
-intelligence"` — the saturated baseline). Regulatory disclosure carries legal
-weight, unlike a press release, so this is the strongest evidence layer in the
-project. Covers all 7 tickers from the market-price basket, including BCS
-and NU (both 20-F filers). Writes:
-- `data/raw/edgar_mentions.csv` — long format, one row per company/year/query
-
-No chart of its own — see `collect_edgar_marketwide.py` below, which reads
-this CSV and charts the `agentic` series against the entire market.
-
-**`collect_edgar_marketwide.py`** — extends `collect_edgar.py`'s `agentic`
-query with no company filter, across every 10-K filer in EDGAR, to check
-whether the 7-company sample's near-zero-then-2026 shape is real or just an
-artifact of which 7 companies got picked. Writes:
-- `data/raw/edgar_marketwide.csv` — year, query, total_filings (market-wide)
-- `charts/edgar_marketwide.png` — 7-company sample vs. market-wide, `agentic` query
-
-Also accepts `--synthetic` (see **Synthetic demo mode** below).
-
-**`classify_filings.py`** — the qualitative counterpart to `collect_edgar.py`.
-The mention *count* can't tell apart three very different things a filing does
-with the same word: **deploying** agentic AI in its own products, **exploring**
-it, or naming it as a **risk / competitive threat**. That distinction is the
-whole of Findings Part 3 — "banks moving first" (self + deploying) and "banks
-naming AI as a threat" (risk) look identical to a keyword tally but mean
-opposite things. This script reads the actual passages and classifies each on
-two axes — stance (deploying / exploring / risk / unclear) × subject (self /
-competitor / general) — using the same Gemini setup as `ai_assistant.py`, and
-is the one Part-3 read the deterministic pipeline structurally cannot produce.
-Two stages, split so a network failure or the LLM daily-quota limit in one
-doesn't cost the other, and each re-runnable alone:
-- **Stage A — extract** (no API key; needs efts.sec.gov + www.sec.gov):
-  full-text-searches the same 7 companies, downloads each matching filing, and
-  extracts the passage around every agentic-phrase hit. Writes
-  `data/raw/edgar_passages.csv` (cached — the classify stage reads this, so the
-  SEC download is paid once).
-- **Stage B — classify** (needs `GEMINI_API_KEY`; no SEC network): batches
-  passages **one LLM call per company** (Gemini's free tier is ~20 requests/day,
-  so per-passage calls would blow the budget), labelling each with a verbatim
-  quote that justifies the stance. Writes `data/raw/edgar_stance.csv`.
-
-```bash
-python classify_filings.py                # extract (if needed) then classify
-python classify_filings.py --extract-only # Stage A only, no API key
-python classify_filings.py --classify-only # Stage B only, from cached passages
-```
-
-The model is told to classify only from the passage in front of it, to quote
-the span it relied on, and to return "unclear" rather than guess — so every
-label traces back to a sentence a reader can re-check against the filing.
-
-**`build_index.py`** — the combination step. Loads the four collectors'
-real output (raises `FileNotFoundError` if any is missing — no automatic
-synthetic fallback; pass `--synthetic` to opt into placeholder demo data
-instead, see below), resamples everything to monthly and z-scores it, then:
-- **Wave 1 sub-index** = z(market relative strength) + z(Wave-1 search interest)
-  + z(fintech-vs-legacy relative profitability growth), re-standardised to
-  unit variance after averaging
-- **Wave 2 sub-index** = z(Wave-2 search interest) + z(EDGAR "ai_broad" intensity),
-  re-standardised the same way
-- **Composite FDI** = `W1_WEIGHT * wave1 + (1 - W1_WEIGHT) * wave2` (default 50/50)
-
-The profitability signal is annual (~3 usable YoY growth points per basket,
-since `yfinance` only exposes ~4 fiscal years) and much thinner than the
-monthly price/search signals — it's held flat at its nearest real value
-outside 2023-2025 rather than shrinking the whole index's date range down to
-that window (see `load_profitability()`'s docstring for the exact mechanism).
-
-Then runs PELT change-point detection (`ruptures`) on each series' 12-month
-momentum to find turning points, labels each one's direction (slowdown /
-acceleration), and scores it for stability by re-running detection across a grid
-of penalties and momentum windows (what fraction of settings find the same
-turning point). Writes `output/fdi.csv` and `output/break_results.json`.
-
-**`make_charts.py`** — reads `output/fdi.csv` + `break_results.json` and
-renders the three headline charts into `charts/`.
-
-**`filings_qa.py`** — "Ask the filings": grounded question-answering over the
-actual SEC filing passages (`edgar_passages.csv`, or the richer
-`edgar_stance.csv` when the classify stage has run). Where `ai_assistant.py`
-grounds Gemini in the *computed numbers*, this grounds it in *primary-source
-text*: it retrieves the most relevant passages (simple lexical scoring — the
-corpus is a few dozen short passages, so embeddings would be machinery without
-benefit) and answers strictly from them, citing every claim with a `[n]` that
-resolves to a verbatim quote, company, and fiscal year. The model is instructed
-to answer only from the supplied passages and to say the filings don't cover
-something rather than fill the gap from open-web knowledge — so the answer
-can't drift off the source. Exposed in the dashboard's Robustness tab (needs a
-Gemini key); also runnable as `python filings_qa.py "your question"`.
-
-**`predictions.py` / `PREDICTIONS.md`** — makes the thesis *falsifiable*.
-VERDICT.md ends with a prediction, not a finding ("banks can absorb the AI wave
-the way they absorbed the first"). `PREDICTIONS.md` freezes that as an explicit
-claim with named *confirming* / *breaking* signals; `predictions.py` reads the
-current state of each signal off the pipeline's own output (`break_results.json`
-+ `edgar_stance.csv` — no new collection), decides which way the observable
-evidence leans (`✅ Holding` / `⚠️ Watch` / `❌ Contrary`), and upserts one dated
-row into the scorecard. The two load-bearing signals are the banks'
-governance-first posture (do they still frame agentic AI mostly as *risk to
-govern*?) and the deployment split (are the fintechs the ones actually
-*deploying* it?); Wave 2 "ignition" is tracked as context only, since an
-ignition banks can see coming is *consistent* with the claim. The honest blind
-spot — a *private* AI-native challenger, invisible to this public-company sample
-— is stated on the card rather than quietly dropped. The monthly refresh runs
-this after `build_index.py`, so the forecast is audited against fresh data over
-time instead of sitting frozen in prose. Standalone: `python predictions.py`
-(add `--print-only` to see the reading without writing the scorecard).
-
 ## Quick start
 
-```bash
-pip install requests pandas numpy scipy statsmodels ruptures matplotlib pytrends yfinance streamlit google-genai python-dotenv
+Install all project dependencies:
 
-# 1. collect data -> writes data/raw/*.csv, data/processed/*.csv, charts/*.png
-#    (collect_market_data.py's fundamentals.csv feeds build_index.py's Wave 1
-#    profitability signal directly -- no separate collection step needed)
+```bash
+pip install -r requirements.txt
+```
+
+Then run the data and analysis pipeline:
+
+```bash
+# 1. Collect primary data. Creates data/raw/, data/processed/, and source charts.
 python collect_market_data.py
 python collect_trends.py
 python collect_edgar.py
 
-# 1b. optional: market-wide/sample generalization checks, standalone (not
-#     required by step 2 below)
+# 2. Optional generalisation checks; these do not enter the composite FDI.
 python collect_market_marketwide.py
 python collect_edgar_marketwide.py
 
-# 1c. optional: LLM stance classification of the agentic passages (Part 3),
-#     standalone. Stage A needs no key; Stage B needs GEMINI_API_KEY.
+# 3. Optional: extract and classify filing passages.
+#    The classification stage requires GEMINI_API_KEY.
 python classify_filings.py
 
-# 2. build indices + run structural break tests -> output/fdi.csv, break_results.json
-#    (requires the three primary collectors above to have run first)
+# 4. Build the FDI and detect structural breaks.
 python build_index.py
 
-# 3. generate the three headline charts -> charts/*.png
+# 5. Generate headline charts from output/fdi.csv and break_results.json.
 python make_charts.py
 ```
 
-## Automation
-
-`.github/workflows/monthly-refresh.yml` re-runs the full pipeline above —
-all collectors, `build_index.py`, `make_charts.py` — once a month (matching
-the index's monthly resolution) and opens a pull request with whatever
-changed in `data/`, `output/`, and `charts/`, rather than pushing straight to
-`main`. Can also be run on demand from the Actions tab (`workflow_dispatch`).
-
-Each collector step runs independently, so one flaky source doesn't block
-the rest of the refresh; the workflow then verifies `build_index.py`'s
-required inputs exist before building, and fails loudly if one is missing.
-The most likely failure is `collect_trends.py` — Google frequently
-rate-limits/blocks pytrends requests from the datacenter IP ranges
-GitHub-hosted runners use, even when the same script works fine locally.
-
-One-time setup before this can open PRs: **Settings → Actions → General →
-Workflow permissions → enable "Allow GitHub Actions to create and approve
-pull requests."**
-
-## Interactive dashboard
+To launch the dashboard, run the following after step 4:
 
 ```bash
-pip install -r requirements.txt
+# Optional: enables Gemini summary/chat, filing Q&A, and the robustness agent.
+export GEMINI_API_KEY="your-ai-studio-key"
+
+# Open http://127.0.0.1:8000 after this starts.
 uvicorn server:app --reload
-# open http://127.0.0.1:8000
 ```
-
-The dashboard is a small **FastAPI backend** (`server.py`) serving a plain
-**HTML/JS/Plotly frontend** (`static/`). Every chart is drawn in the browser
-from real numbers returned as JSON — nothing is shipped as a PNG. It is
-organised as the project's stages, left to right:
-
-1. **Data Collection** — the four raw sources, plus the revenue-share
-   market-share proxy.
-2. **Index Construction** — Wave 1 / Wave 2 sub-indices and the composite FDI,
-   recomputed live from sidebar sliders (`W1_WEIGHT`, PELT penalty, momentum
-   window).
-3. **Turning Points** — PELT-detected turning points, each with a direction
-   (slowdown / acceleration) and a stability score.
-4. **Robustness Checks** — the sector-ETF and market-wide EDGAR generalization
-   checks, the agentic-language
-   **stance panel** (if `classify_filings.py` has been run): a per-company
-   deploying / exploring / risk count table covering every passage, then the
-   passages themselves with the verbatim filing quote behind each label —
-   defaulting to the clearest signals (deploying / risk, the two poles Part 3
-   contrasts) with the exploratory / unclear ones one click away, degrading to
-   a "not yet classified" hint if `edgar_stance.csv` is absent; and a
-   **"Run robustness agent"** button (`robustness_agent.py`) that runs a live
-   tool-using LLM red-team of the headline breaks (see below); and an
-   **"Ask the filings"** box (`filings_qa.py`) — grounded Q&A over the real
-   filing passages, with a verbatim quote cited behind every claim.
-5. **Converging Evidence** — every signal on one z-scored, smoothed scale, so
-   the reader can see the independent sources agree on the two turning points.
-6. **Verdict & AI Assistant** — the **standing-prediction scorecard**
-   (`predictions.py` / `PREDICTIONS.md`) with its current lean and month-by-month
-   track record, then `VERDICT.md` + README findings, plus the Gemini summary
-   and Q&A.
-
-The endpoints import `build_indices()` and `run_break_analysis()` straight from
-`build_index.py` (which accepts `momentum_window`/`pelt_penalty` overrides,
-defaulting to the same `CONFIG` constants the CLI uses), so the live numbers
-can never drift from the pipeline. If `data/raw/*.csv` is missing, a sidebar
-toggle switches to the same synthetic demo data as `--synthetic` elsewhere
-(clearly labeled — moving sliders changes how the data is combined and tested,
-never which data is loaded).
-
-### AI Research Assistant (Gemini)
-
-Below the charts, an "AI Research Assistant" section (`ai_assistant.py`) adds
-two Gemini-powered features, both grounded in the exact `df`/`breaks` objects
-the server just recomputed — never a static copy of `VERDICT.md`:
-
-- **Live summary** — regenerates a short executive-summary paragraph that
-  reflects whatever the sliders are *currently* set to, so you can compare it
-  against `VERDICT.md`'s written verdict at the default 50/50 weight.
-- **Ask a question** — a chat interface for questions about the current run
-  (turning-point dates, stability scores, what a limitation means, etc.).
-
-Every call rebuilds its context fresh from the live numbers and is instructed
-to only cite figures present in that context — it can't invent a statistic or
-silently reuse a stale answer from before you moved a slider. It also refuses
-to blur the project's own epistemic distinctions: Wave 1 findings get stated
-with real confidence, Wave 2 findings are flagged as thin/early evidence, and
-"banks absorb the AI wave" is treated as the labeled prediction it is, not a
-finding.
-
-Needs a Gemini API key — free, no billing card required, from the **"Get API
-key" flow at <https://ai.google.dev>** (AI Studio) specifically. A key issued
-through Google Cloud Console / Vertex AI instead is a different, billed
-product. Three ways to supply an AI Studio key, in order of precedence:
-1. **`.env` file (recommended for local dev)** — put `GEMINI_API_KEY=...` in
-   this project's gitignored `.env` file, loaded automatically by `server.py`
-   via `python-dotenv`.
-2. **Environment variable** — `export GEMINI_API_KEY=...` before launching.
-3. **Sidebar input** — paste it into the dashboard at runtime instead; kept in
-   the browser's memory only and sent per-request, never written to disk.
-
-If no key is present through any of these, the app still runs normally —
-this section just shows the key prompt instead of the summary/chat tabs.
-
-### Robustness agent (Gemini, tool-using)
-
-The Robustness Checks tab has a **"Run robustness agent"** button backed by
-`robustness_agent.py`. Unlike the research assistant (a single grounded
-question-and-answer call), this is a genuine multi-step **tool-using agent**. It
-is given one tool — `check(w1_weight, pelt_penalty, momentum_window)`, a thin
-wrapper around `build_index.py`'s own `build_indices()` / `run_break_analysis()`
-— and decides for itself, turn by turn, which parameter combinations to test,
-then judges whether each headline turning point is robust, fragile, or
-parameter-dependent. The dashboard shows its check-by-check trace (the exact
-settings it chose and the break dates each returned) and its final verdict, so
-you watch the exploration, not just the conclusion.
-
-It is the qualitative counterpart to the built-in **stability score**, which is
-a *deterministic* grid sweep over the same parameters — the agent samples that
-space with reasoning instead of exhaustively, so treat it as an illustrative
-red-team, not a replacement for the stability percentages. It can only check
-within the same bounds the sidebar sliders expose (`w1_weight` 0–1,
-`pelt_penalty` 0.5–10, `momentum_window` 3–24) and is capped at a few checks so
-one run stays inside Gemini's free-tier quota. Also runnable from the CLI:
-
-```bash
-python robustness_agent.py               # red-team the real breaks
-python robustness_agent.py --synthetic   # red-team the synthetic-demo breaks
-```
-
-Needs the same `GEMINI_API_KEY` as the research assistant above; the CLI also
-writes `output/robustness_report.md`.
-
-## Synthetic demo mode
-
-`collect_trends.py`, `collect_edgar.py`, `collect_edgar_marketwide.py`, and
-`collect_market_marketwide.py` all need live internet access
-(trends.google.com / efts.sec.gov / Yahoo Finance), which a sandboxed
-environment may block. For demoing the *method* without that access,
-`build_index.py`, `make_charts.py`, `collect_edgar_marketwide.py`, and
-`collect_market_marketwide.py` all accept `--synthetic`:
-
-```bash
-python build_index.py --synthetic               # writes output/fdi_synthetic.csv,
-                                                  # output/break_results_synthetic.json
-python make_charts.py --synthetic                # reads those, writes charts/*_synthetic.png
-python collect_edgar_marketwide.py --synthetic   # writes data/raw/edgar_marketwide_synthetic.csv,
-                                                  # charts/edgar_marketwide_synthetic.png
-python collect_market_marketwide.py --synthetic  # writes data/raw/market_marketwide_synthetic.csv,
-                                                  # charts/market_marketwide_synthetic.png
-```
-
-`collect_market_data.py` and `collect_trends.py` don't need their own
-`--synthetic` flag — `build_index.py --synthetic` fabricates stand-in data
-for all four collectors' outputs directly. `collect_edgar_marketwide.py` and
-`collect_market_marketwide.py` are standalone checks that never flow through
-`build_index.py`, so each needed its own synthetic path for an offline
-fallback.
-
-This is opt-in only — it never triggers automatically, and it never touches
-`output/fdi.csv` / `output/break_results.json` / `data/raw/edgar_marketwide.csv`
-/ `data/raw/market_marketwide.csv` / the non-suffixed chart PNGs, so it can't
-be confused with, or silently overwrite, a real result. Every synthetic chart
-is watermarked "SYNTHETIC DEMO DATA -- NOT A REAL RESULT" and the console
-output prints the same warning. **The synthetic result is a demonstration
-that the pipeline and break-detection method work end to end — it is not
-evidence for or against the two-wave thesis**, since its shape (Wave 1 rising
-then plateauing, Wave 2 flat then accelerating; market-wide/sample `agentic`
-counts near-zero then spiking; fintech-vs-bank ETF rising then rolling over)
-is baked in by construction in `synthetic_sources()`,
-`synthetic_marketwide_and_sample()`, and `synthetic_etf_and_sample()`.
-
-## Outputs
-
-- `output/fdi.csv` — monthly sub-indices and composite FDI
-- `output/break_results.json` — detected turning points + direction + stability score per series
-- seven chart PNGs in `charts/` — see below
-- (if `--synthetic` was used) matching `output/*_synthetic.*` and
-  `charts/*_synthetic.png` files, entirely separate from the real ones above
 
 ## Findings
 
 The full evidence behind [VERDICT.md](VERDICT.md)'s verdict, split into the same
 three parts.
-
-### Part 1: Wave 1 fintech has largely lost
-
-**Price evidence** (`charts/indexed_performance.png`, `data/raw/prices.csv`), rebasing each company's stock to 100 at its start date:
-
-| Ticker | Category | Peak (indexed) | Peak date | Value at 2026-07-02 |
-|---|---|---|---|---|
-| XYZ (Block) | embedded finance | **779** | 2021-08-05 | 218 |
-| PYPL (PayPal) | embedded finance | 418 | 2021-07-23 | **62** (below 2018 start) |
-| SOFI | neobank | 264 | 2025-11-12 | 150 |
-| NU (Nubank) | neobank | 182 | 2026-01-28 | 132 |
-| JPM | traditional bank | n/a | steady climb | **389** |
-| BCS (Barclays) | traditional bank | n/a | steady climb | 335 |
-| HSBC | traditional bank | n/a | steady climb | 299 |
-
-The disruptors had a real, dramatic run in 2020-2021: Block up nearly 8x, PayPal over 4x. It didn't hold. PayPal is the only company here to end up below its own starting price five years later. Traditional banks, which barely participated in the 2021 boom, have compounded steadily since 2023-2024 and are now either the best performer (JPM) or fully caught up (BCS, HSBC).
-
-**Profitability evidence** (`data/raw/fundamentals.csv`, now wired into the Wave 1 sub-index as `wave1_profitability`; see `build_index.py`'s `load_profitability()`):
-
-| Ticker | 2022 net income | 2023 net income |
-|---|---|---|
-| SOFI | **-$320M** | -$301M |
-| XYZ (Block) | **-$541M** | +$10M |
-| NU (Nubank) | **-$365M** | +$1,031M |
-| JPM | +$37.7B | +$49.6B |
-| HSBC | +$15.6B | +$23.5B |
-
-2022 was a losing year for these three disruptors, while both banks' profits grew substantially. Quantified as fintech-basket-average YoY growth minus legacy-basket-average YoY growth (a symmetric formula, since several fintech tickers cross from loss to profit and a plain percent change would explode): the fintech basket closed that gap sharply in fiscal 2023-2024 (+0.97, +1.03 on a roughly [-2, 2] scale), then gave it back in fiscal 2025 (-0.06, back to roughly even growth). `yfinance` only exposes ~4 fiscal years per company, so this is 3 annual points, not a monthly series: thin by the same standard applied to the EDGAR and search signals.
-
-**Market-share proxy** (`data/raw/fundamentals.csv` revenue column, Data Collection tab): the thesis question is literally about *market share*, which stock price only proxies (a stock can fall while the business keeps growing). Fintech's share of the combined (fintech + legacy) **revenue** pool went **19.4% (2022) → 19.5% → 20.3% → 20.3% (2025)** — essentially flat. Even as the fintechs returned to profit, they stopped taking ground: consistent with "Wave 1 has matured", and a more direct read on the thesis than price. Thin by construction (yfinance exposes ~4 fiscal years), so it's a recent snapshot, not a long history.
-
-**Generalization check** (`collect_market_marketwide.py`, `data/raw/market_marketwide.csv`, `charts/market_marketwide.png`) asks Part 2's EDGAR question of the price signal: is "fintech rose then rolled over" a fact about the 7 picked tickers, or the sector? FINX (fintech-sector ETF) relative to KBWB (bank-sector ETF) peaked at **233** (rebased to 100 at 2018) in **September 2020**, then fell to **56** by July 2026, below its 2018 start. The 7-ticker sample peaked at **519** the same month and sits at **73** by July 2026, also below start. Different amplitude, same shape, same turning point, found independently: the "fintech's win didn't hold" story isn't an artifact of which 7 companies got picked.
-
-**What this can't confirm:** whether banks won by copying features or acquiring challengers is plausible but untested here; there's no product-feature or M&A data in this project. Treat that mechanism as outside knowledge, not a finding.
-
-**Turning-point confirmation** (`output/break_results.json`, `charts/two_wave_index.png`): the Wave 1 sub-index (three inputs: price, search, profitability) has a turning point at **April 2021** — a **slowdown**, momentum rolling from rising to declining — that is **robust**, reappearing under **75% (15/20)** of penalty × momentum-window settings. A second at **June 2025** (an **acceleration**, partial rebound) is nearly as stable at **70% (14/20)**. Momentum (`charts/momentum_handoff.png`) is negative for most of 2021-2025: literally losing ground year over year during what this project calls Wave 1's "disruption." The composite FDI shows the same June 2025 acceleration robustly (**75%**), but its April 2021 slowdown is **fragile** (only **35%, 7/20**) — an honest caveat: blending the waves *weakens* the 2021 signal that is strong in Wave 1 alone, which is exactly why the project keeps the sub-indices separate rather than reading the composite. (This replaces an earlier Chow test whose p-values were biased by estimating the break date from the same data — see the "Why not a Chow test?" note above.)
-
-### Part 2: Wave 2 (AI-native finance) is not yet measurable
-
-This project can't price "is AI-native finance winning" the way it can Wave 1: the companies that would represent that wave are mostly private or too newly public for real stock history. Forcing a market-price answer would mean reading a signal into a handful of thin, noisy tickers that isn't really there. The honest move here is to say so, and treat the thinness of every measurable proxy as evidence the wave is early, not absent.
-
-**SEC filings**, the sharpest signal, thin by design not accident (`data/raw/edgar_mentions.csv`, charted against the market-wide check in `charts/edgar_marketwide.png`). Filings were searched for `"artificial intelligence"` (`ai_broad`, the saturated baseline) and the "AI agent"/"agentic AI" phrase family (`agentic`, Wave-2-specific). By year, summed across all 7 companies:
-
-| Year | `agentic` mentions | `ai_broad` mentions |
-|---|---|---|
-| 2019-2025 | **0 every year** | 1 → 3 → 4 → 5 → 5 → 7 → 7 |
-| 2026 | **5 total** (JPM, HSBC, Barclays, PayPal, Block: one filing each) | 7 |
-
-Seven straight years of zero, then five filings in the latest cycle across seven companies: a real, dated first appearance in a legally binding disclosure, not marketing copy, but still thin enough not to over-read. `ai_broad`, for comparison, is already saturated by 2019, confirming it's a baseline, not a discriminator.
-
-**Checked against the entire market**, not just these 7 (`collect_edgar_marketwide.py`, `data/raw/edgar_marketwide.csv`, `charts/edgar_marketwide.png`): same `agentic` query, form type, and years, but no company filter, across every 10-K filer:
-
-| Year | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 |
-|---|---|---|---|---|---|---|---|---|
-| Market-wide `agentic` filings | 5 | 1 | 0 | 1 | 3 | 6 | **111** | **388** |
-
-This is the single strongest evidence in the project that the thinness is early, not an artifact of a 7-company sample. Market-wide, `agentic` language sits in the low single digits, against tens of thousands of filers, for six straight years, then jumps roughly 18x in 2025 and grows further in 2026: same shape as the 7-company sample, different scale, found independently. It directly answers the obvious objection: no, this isn't just an artifact of which 7 companies got picked.
-
-(Two points needed manual re-verification: the unscoped query is flakier than per-company ones, returning a spurious `0` for `ai_broad` 2026 on first pull, 3640 on retry, consistent with 2025's 3324, and `agentic` 2024 failed its automatic retries and was re-queried by hand to 6. Recorded in `collect_edgar_marketwide.py`'s comments; worth knowing if you re-run this and see a suspicious zero.)
-
-**Search attention:** Wave 2 terms ("AI agent finance", "agentic AI banking", "autonomous wealth management") register literally zero interest every year from 2018 through 2023. Interest turns on in 2024-2025 and reaches ~22 by 2026: real, but from a standing start over two years, still below Wave 1's level.
-
-**No market proxy exists.** Unlike Wave 1, there's no "AI-native fintech" stock basket here, because the relevant companies aren't public. That's not a gap to fix with more tickers; it's the state of the world this verdict describes.
-
-### Part 3: The likely winner is the banks, again, plausible but not proven
-
-The dramatic version of the Wave 2 thesis assumes banks are too encumbered by legacy infrastructure to use AI, leaving room for an AI-native challenger to repeat the Wave 1 playbook. That's not well supported here, and one data point leans the other way: **all five companies whose 2026 filings mention `agentic` language are already-established incumbents: JPM, HSBC, Barclays, PayPal, Block.** None are new AI-native entrants, because none exist in the sample. Neither neobank, SoFi or Nubank, shows `agentic` language even in 2026; the signal sits entirely with traditional banks and older, already-public embedded-finance players, the opposite of what an "AI-native upstart" thesis would predict.
-
-**But the count alone overstates "incumbents moving first" — reading the passages splits it in two** (`classify_filings.py`, `data/raw/edgar_stance.csv`; stance panel in the dashboard's Data Collection tab). The mention count treats every `agentic` reference as one company "disclosing AI," which reads as leadership. Classifying each of the 19 passages by what it actually says — deploying it, exploring it, or naming it as a **risk / competitive threat** — shows the three traditional banks are not moving first at all:
-
-| Company | deploying | exploring | risk | dominant stance |
-|---|---|---|---|---|
-| JPMorgan | 0 | 0 | 3 | **risk** |
-| HSBC | 0 | 1 | 2 | **risk** |
-| Barclays | 0 | 0 | 5 | **risk** |
-| PayPal | 1 | 1 | 1 | **deploying** |
-| Block | 1 | 0 | 2 | **risk** |
-
-Every one of the big banks' agentic mentions is a **risk-factor disclosure** — JPMorgan's three are all in its risk section ("disintermediation of direct customer relationships if AI agents autonomously manage financial decisions"; cyber exposure; system failure), and Barclays' five read the same way ("liability, reputational harm, regulatory actions"; "expanded attack surface"). The genuine *self + deploying* signals in the sample come from the two older **embedded-finance** players: PayPal ("more reasons to use PayPal and Venmo") and Block ("technology we developed, such as AI agents, available" under open-source licenses). So the honest read is not "incumbents are moving first" but a **split by posture**: *the fintechs are deploying agentic AI to win customers, while the big banks are treating it as a risk to be governed.*
-
-**Read the right way, that split supports the prediction below rather than cutting against it.** It is tempting to score "banks call it risky" as "banks are scared / behind." But the passages don't read as paralysis — they read as **governance discipline**: HSBC applies "We have enhanced our inventory control to apply heightened scrutiny of agentic AI use cases before deployment," and both HSBC and JPMorgan frame governance as the precondition for using the technology at all. That is what deliberate absorption of a new technology looks like from a regulated incumbent: name the risks, build the controls, then deploy — not rush a half-governed product to market the way an unencumbered challenger might. The fintechs' deploy-to-attract posture and the banks' govern-first posture are two different strategies, not a race the banks are losing.
-
-This is **consistent with** incumbents absorbing the wave, not **proof of** it. The dataset is public companies only, which structurally excludes any private AI-native challenger moving as fast or faster out of view. Absence of a counter-example in a sample that couldn't contain one either way is weak evidence. What tips the prediction toward "banks win again" is partly outside this codebase — balance-sheet scale, existing compute/data budgets, and the fact that (per Part 1) banks currently have the profits to fund an AI build-out while several Wave 1 challengers were posting losses as recently as 2022-2023 — and partly the governance-first stance itself: if adopting AI under proper control, and making sure it is used correctly, is a deliberate strategy rather than slowness, it is precisely the mechanism by which incumbents absorb a technology wave without being disrupted by it. That reading remains a **prediction, not a finding**, and the single thing that would break it is the private, AI-native entrant this public-company sample cannot see.
 
 ## Limitations
 
