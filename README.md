@@ -10,8 +10,9 @@ the resulting turning points survive alternative modelling choices.
 
 ## How it works
 
-Four independent data sources are collected, normalised to a monthly frequency,
-and combined into a **Fintech Disruption Index (FDI)** with two sub-indices:
+Four signals from three source systems (Yahoo Finance, Google Trends, and SEC
+EDGAR) are normalised to a monthly frequency and combined into a **Fintech
+Disruption Index (FDI)** with two sub-indices:
 
 | Source | Script | Signal | Wave |
 |--------|--------|--------|------|
@@ -24,6 +25,7 @@ and combined into a **Fintech Disruption Index (FDI)** with two sub-indices:
   relative profitability growth
 - **Wave 2 sub-index** = Wave-2 search interest + EDGAR AI intensity
 - **Composite FDI** = weighted blend (weight configurable)
+
 
 Turning points are detected on each sub-index's 12-month momentum with PELT
 (`ruptures`). Each is assigned a stability score: the share of a penalty ×
@@ -52,6 +54,10 @@ across all SEC 10-K filers.
 ├── make_charts.py         # the three headline charts (reads output/, writes charts/)
 ├── server.py              # FastAPI server for the interactive dashboard
 ├── static/                # HTML, CSS, and JavaScript dashboard frontend
+│   ├── index.html         # dashboard page
+│   └── assets/
+│       ├── css/style.css  # styling
+│       └── js/            # API client, charts, and UI behaviour
 ├── ai_assistant.py        # Gemini research assistant: live summary + Q&A
 ├── robustness_agent.py    # tool-using Gemini agent: red-teams the headline
 │                          #   breaks by choosing its own parameter checks
@@ -67,7 +73,7 @@ across all SEC 10-K filers.
 │   │                          # edgar_mentions.csv, edgar_marketwide.csv,
 │   │                          # edgar_passages.csv, edgar_stance.csv
 │   └── processed/             # trends_yearly.csv
-├── charts/                # per-collector charts + the three headline charts (*.png)
+├── charts/                # generated collector, validation, and headline charts
 ├── output/                # fdi.csv, break_results.json, robustness reports
 ├── VERDICT.md             # written verdict
 └── README.md
@@ -160,8 +166,3 @@ three parts.
   carry the same weight as the count itself. The `unclear` labels (2 of 19,
   both Barclays) mark passages the model itself declined to call.
 
-## Config
-
-All tunable parameters (ticker baskets, keyword groups, composite weight,
-resampling frequency, PELT penalty) live in the `CONFIG` block at the top of
-`build_index.py`.
